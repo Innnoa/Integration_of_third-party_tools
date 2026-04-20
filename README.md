@@ -571,13 +571,3 @@ sudo systemctl restart docker
 bash -n scripts/*.sh
 docker compose --env-file .env config >/dev/null
 ```
-
-## 后续演进
-
-等本地 HTTP 版本跑通后，再做下一步更稳：
-
-1. 接 Traefik 或 Nginx
-2. 统一域名
-3. 开启 HTTPS
-4. 把 Keycloak、oauth2-proxy、Harbor 的地址全部切到域名
-5. 去掉 Docker insecure registry
