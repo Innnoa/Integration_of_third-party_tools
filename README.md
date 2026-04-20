@@ -1,7 +1,6 @@
 # WSL2 DevOps SSO Stack
 
 本项目用于在 WSL2 的 Arch Linux 环境中，部署一套以 Keycloak 为统一认证中心的本地 DevOps 管理栈。  
-设计目标是先把 HTTP 本地测试跑通，再平滑升级到 HTTPS 和统一域名。
 
 ## 包含的服务
 
