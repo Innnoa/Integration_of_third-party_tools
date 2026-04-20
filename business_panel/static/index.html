@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>统一业务面板</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body data-refresh-ms="15000">
+    <main class="shell">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Integration Console</p>
+          <h1>统一业务面板</h1>
+          <p class="summary">直达各业务页，集中看状态，并在同一页做受控启停。</p>
+        </div>
+        <div class="global-actions">
+          <button data-action="start" data-unit="all">Start All</button>
+          <button data-action="restart" data-unit="all">Restart All</button>
+          <button data-action="stop" data-unit="all" class="danger">Stop All</button>
+        </div>
+      </section>
+      <section id="feedback" class="feedback" aria-live="polite" hidden></section>
+      <section id="totals" class="totals" aria-live="polite"></section>
+      <section id="cards" class="cards" aria-live="polite"></section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

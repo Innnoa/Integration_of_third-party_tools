@@ -1,0 +1,27 @@
+kafka:
+  clusters:
+    - name: ${KAFKA_UI_CLUSTER_NAME}
+      bootstrapServers: ${KAFKA_BOOTSTRAP_SERVERS}
+
+auth:
+  type: OAUTH2
+  oauth2:
+    client:
+      keycloak:
+        provider: keycloak
+        clientId: ${KAFKA_UI_CLIENT_ID}
+        clientSecret: ${KAFKA_UI_CLIENT_SECRET}
+        client-name: keycloak
+        authorization-grant-type: authorization_code
+        redirect-uri: ${PUBLIC_SCHEME}://${PUBLIC_HOST}/login/oauth2/code/keycloak
+        issuer-uri: ${PUBLIC_SCHEME}://${KEYCLOAK_PUBLIC_HOST}/realms/${KEYCLOAK_REALM}
+        user-name-attribute: preferred_username
+        scope:
+          - openid
+          - profile
+          - email
+        custom-params:
+          type: oauth
+          roles-field: groups
+
+# 后续如果要启用细粒度 RBAC，可在这里增加 rbac 段并将 Keycloak group 映射到角色。

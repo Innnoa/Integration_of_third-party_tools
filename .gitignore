@@ -1,0 +1,14 @@
+.codex
+.env
+.codex/
+.superpowers/
+.pytest_cache/
+__pycache__/
+*.pyc
+outputs/
+harbor/data/
+harbor/installer/common/config/
+harbor/installer/input/
+harbor/installer/*.log
+harbor/installer/harbor.yml
+harbor/installer/docker-compose.override.yml

@@ -1,0 +1,48 @@
+services:
+  proxy:
+    networks:
+      - harbor
+      - tools_net
+    extra_hosts:
+      - "auth.localhost:host-gateway"
+  core:
+    networks:
+      - harbor
+      - tools_net
+    extra_hosts:
+      - "auth.localhost:host-gateway"
+  portal:
+    networks:
+      - harbor
+      - tools_net
+    extra_hosts:
+      - "auth.localhost:host-gateway"
+  jobservice:
+    networks:
+      - harbor
+      - tools_net
+    extra_hosts:
+      - "auth.localhost:host-gateway"
+  registry:
+    networks:
+      - harbor
+      - tools_net
+    extra_hosts:
+      - "auth.localhost:host-gateway"
+  registryctl:
+    networks:
+      - harbor
+      - tools_net
+    extra_hosts:
+      - "auth.localhost:host-gateway"
+  trivy-adapter:
+    networks:
+      - harbor
+      - tools_net
+    extra_hosts:
+      - "auth.localhost:host-gateway"
+
+networks:
+  tools_net:
+    external: true
+    name: REPLACE_ME_TOOLS_NETWORK
