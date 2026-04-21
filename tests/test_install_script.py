@@ -16,6 +16,7 @@ def stage_successful_runtime_scripts(root: Path, panel_content: str = "#!/usr/bi
     stage_contents = {
         "init-network.sh": "#!/usr/bin/env bash\nexit 0\n",
         "up-main.sh": "#!/usr/bin/env bash\nexit 0\n",
+        "repair-mariadb-phpmyadmin-user.sh": "#!/usr/bin/env bash\nexit 0\n",
         "prepare-harbor.sh": "#!/usr/bin/env bash\nexit 0\n",
         "bootstrap-keycloak.sh": "#!/usr/bin/env bash\nexit 0\n",
         "panel.sh": panel_content,
@@ -232,7 +233,7 @@ class InstallScriptTest(unittest.TestCase):
             stage_install_scripts(root)
             log_file = root / "run.log"
             (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
-            for name in ("init-network.sh", "up-main.sh", "bootstrap-keycloak.sh", "panel.sh"):
+            for name in ("init-network.sh", "up-main.sh", "repair-mariadb-phpmyadmin-user.sh", "bootstrap-keycloak.sh", "panel.sh"):
                 write_executable(root / "scripts" / name, f"#!/usr/bin/env bash\necho {name} >> \"$INSTALL_LOG\"\n")
             write_executable(root / "scripts" / "prepare-harbor.sh", "#!/usr/bin/env bash\necho harbor-prepare-ran >> \"$INSTALL_LOG\"\n")
             result = subprocess.run(
@@ -245,10 +246,15 @@ class InstallScriptTest(unittest.TestCase):
             lines = log_file.read_text(encoding="utf-8").splitlines() if log_file.exists() else []
 
         self.assertEqual(result.returncode, 0)
-        self.assertEqual(lines, ["init-network.sh", "up-main.sh", "bootstrap-keycloak.sh", "panel.sh"])
-        self.assertIn("[5/8] harbor_prepare", result.stdout)
+        self.assertEqual(
+            lines,
+            ["init-network.sh", "up-main.sh", "repair-mariadb-phpmyadmin-user.sh", "bootstrap-keycloak.sh", "panel.sh"],
+        )
+        self.assertIn("[5/9] phpmyadmin_user_repair", result.stdout)
+        self.assertIn("OK: phpmyadmin_user_repair", result.stdout)
+        self.assertIn("[6/9] harbor_prepare", result.stdout)
         self.assertIn("SKIP: harbor_prepare", result.stdout)
-        self.assertIn("[6/8] harbor_install", result.stdout)
+        self.assertIn("[7/9] harbor_install", result.stdout)
         self.assertIn("SKIP: harbor_install", result.stdout)
 
     def test_install_preserves_existing_secrets_on_rerun(self) -> None:
@@ -309,6 +315,54 @@ class InstallScriptTest(unittest.TestCase):
         self.assertGreaterEqual(len(env_map["KEYCLOAK_ADMIN_PASSWORD"]), 24)
         self.assertRegex(env_map["OAUTH2_PROXY_COOKIE_SECRET"], r"^[0-9a-f]{32}$")
 
+    def test_install_adds_phpmyadmin_autologin_defaults_when_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            (root / "harbor" / "installer").mkdir(parents=True)
+            write_executable(root / "harbor" / "installer" / "install.sh", "#!/usr/bin/env bash\nexit 0\n")
+            (root / ".env.example").write_text("PUBLIC_SCHEME=http\n", encoding="utf-8")
+
+            result = subprocess.run(
+                ["bash", "install.sh", "--skip-panel", "--skip-harbor"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+            env_map = parse_env((root / ".env").read_text(encoding="utf-8"))
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(env_map["PHPMYADMIN_ALLOWED_GROUP"], "/platform-admins")
+        self.assertEqual(env_map["PHPMYADMIN_AUTOLOGIN_USER"], "pma_appdb_admin")
+
+    def test_install_generates_phpmyadmin_autologin_password_when_placeholder_present(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            (root / "harbor" / "installer").mkdir(parents=True)
+            write_executable(root / "harbor" / "installer" / "install.sh", "#!/usr/bin/env bash\nexit 0\n")
+            (root / ".env.example").write_text(
+                "PUBLIC_SCHEME=http\nPHPMYADMIN_AUTOLOGIN_PASSWORD=ChangeMe_PhpMyAdmin_Autologin_123!\n",
+                encoding="utf-8",
+            )
+
+            subprocess.run(
+                ["bash", "install.sh", "--skip-panel", "--skip-harbor"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            env_map = parse_env((root / ".env").read_text(encoding="utf-8"))
+
+        self.assertIn("PHPMYADMIN_AUTOLOGIN_PASSWORD", env_map)
+        self.assertNotEqual(env_map["PHPMYADMIN_AUTOLOGIN_PASSWORD"], "ChangeMe_PhpMyAdmin_Autologin_123!")
+        self.assertGreaterEqual(len(env_map["PHPMYADMIN_AUTOLOGIN_PASSWORD"]), 24)
+
     def test_install_adds_default_hosts_when_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -365,7 +419,14 @@ class InstallScriptTest(unittest.TestCase):
             )
             (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
             log_file = root / "run.log"
-            for name in ("init-network.sh", "up-main.sh", "prepare-harbor.sh", "bootstrap-keycloak.sh", "panel.sh"):
+            for name in (
+                "init-network.sh",
+                "up-main.sh",
+                "repair-mariadb-phpmyadmin-user.sh",
+                "prepare-harbor.sh",
+                "bootstrap-keycloak.sh",
+                "panel.sh",
+            ):
                 write_executable(root / "scripts" / name, f"#!/usr/bin/env bash\necho {name} >> \"$INSTALL_LOG\"\n")
             result = subprocess.run(
                 ["bash", "install.sh"],
@@ -381,21 +442,23 @@ class InstallScriptTest(unittest.TestCase):
         self.assertEqual(
             output_lines,
             [
-                "[1/8] preflight",
+                "[1/9] preflight",
                 "OK: preflight",
-                "[2/8] env",
+                "[2/9] env",
                 "OK: env",
-                "[3/8] network",
+                "[3/9] network",
                 "OK: network",
-                "[4/8] main_stack",
+                "[4/9] main_stack",
                 "OK: main_stack",
-                "[5/8] harbor_prepare",
+                "[5/9] phpmyadmin_user_repair",
+                "OK: phpmyadmin_user_repair",
+                "[6/9] harbor_prepare",
                 "OK: harbor_prepare",
-                "[6/8] harbor_install",
+                "[7/9] harbor_install",
                 "OK: harbor_install",
-                "[7/8] bootstrap",
+                "[8/9] bootstrap",
                 "OK: bootstrap",
-                "[8/8] panel",
+                "[9/9] panel",
                 "OK: panel",
             ],
         )
@@ -404,6 +467,7 @@ class InstallScriptTest(unittest.TestCase):
             [
                 "init-network.sh",
                 "up-main.sh",
+                "repair-mariadb-phpmyadmin-user.sh",
                 "prepare-harbor.sh",
                 "harbor-install",
                 "bootstrap-keycloak.sh",
@@ -422,7 +486,7 @@ class InstallScriptTest(unittest.TestCase):
             panel_script = root / "scripts" / "panel.sh"
             write_executable(panel_script, "#!/usr/bin/env bash\necho panel-stage-ran\n")
             write_executable(root / "scripts" / "up-main.sh", "#!/usr/bin/env bash\nexit 0\n")
-            for name in ("init-network.sh", "prepare-harbor.sh", "bootstrap-keycloak.sh"):
+            for name in ("init-network.sh", "repair-mariadb-phpmyadmin-user.sh", "prepare-harbor.sh", "bootstrap-keycloak.sh"):
                 write_executable(root / "scripts" / name, "#!/usr/bin/env bash\nexit 0\n")
             result = subprocess.run(
                 ["bash", "install.sh", "--skip-panel"],
@@ -440,7 +504,7 @@ class InstallScriptTest(unittest.TestCase):
             (root / "scripts").mkdir()
             stage_install_scripts(root)
             (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
-            for name in ("init-network.sh", "up-main.sh", "prepare-harbor.sh", "bootstrap-keycloak.sh"):
+            for name in ("init-network.sh", "up-main.sh", "repair-mariadb-phpmyadmin-user.sh", "prepare-harbor.sh", "bootstrap-keycloak.sh"):
                 write_executable(root / "scripts" / name, "#!/usr/bin/env bash\nexit 0\n")
             result = subprocess.run(
                 ["bash", "install.sh", "--skip-harbor", "--skip-panel"],
@@ -458,21 +522,23 @@ class InstallScriptTest(unittest.TestCase):
         self.assertEqual(
             relevant_lines,
             [
-                "[1/8] preflight",
+                "[1/9] preflight",
                 "OK: preflight",
-                "[2/8] env",
+                "[2/9] env",
                 "OK: env",
-                "[3/8] network",
+                "[3/9] network",
                 "OK: network",
-                "[4/8] main_stack",
+                "[4/9] main_stack",
                 "OK: main_stack",
-                "[5/8] harbor_prepare",
+                "[5/9] phpmyadmin_user_repair",
+                "OK: phpmyadmin_user_repair",
+                "[6/9] harbor_prepare",
                 "SKIP: harbor_prepare",
-                "[6/8] harbor_install",
+                "[7/9] harbor_install",
                 "SKIP: harbor_install",
-                "[7/8] bootstrap",
+                "[8/9] bootstrap",
                 "OK: bootstrap",
-                "[8/8] panel",
+                "[9/9] panel",
                 "SKIP: panel",
             ],
         )

@@ -447,6 +447,15 @@ PUBLIC_HOST:9092
 第一次访问会跳转到 Keycloak。  
 后续因为已经有 Keycloak 会话，一般不需要重复输密码。
 
+#### phpMyAdmin 自动登录说明
+
+- 只有 `platform-admins` 组成员可以进入 phpMyAdmin
+- 通过 SSO 后，进入后会自动使用固定 MariaDB 账号登录
+- 该账号只授权 `appdb`
+- 非 `platform-admins` 成员会收到 `403`
+- 如果你修改了 `PHPMYADMIN_AUTOLOGIN_PASSWORD`、`PHPMYADMIN_AUTOLOGIN_USER` 或数据库权限，重跑 `./install.sh --repair`
+- 只需要补数据库账号权限时，也可以单独执行 `./scripts/repair-mariadb-phpmyadmin-user.sh`
+
 ## Harbor 安装与 OIDC
 
 Harbor 保持官方安装方式，不并入主 compose。

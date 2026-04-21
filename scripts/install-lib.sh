@@ -46,7 +46,7 @@ run_harbor_install() (
 )
 
 run_install() {
-  local total=8
+  local total=9
 
   log_phase 1 "${total}" "preflight"
   run_step "preflight" preflight
@@ -60,24 +60,27 @@ run_install() {
   log_phase 4 "${total}" "main_stack"
   run_step "main_stack" "${ROOT_DIR}/scripts/up-main.sh"
 
-  log_phase 5 "${total}" "harbor_prepare"
+  log_phase 5 "${total}" "phpmyadmin_user_repair"
+  run_step "phpmyadmin_user_repair" "${ROOT_DIR}/scripts/repair-mariadb-phpmyadmin-user.sh"
+
+  log_phase 6 "${total}" "harbor_prepare"
   if [[ "${INSTALL_SKIP_HARBOR}" == "1" ]]; then
     printf 'SKIP: harbor_prepare\n'
   else
     run_step "harbor_prepare" "${ROOT_DIR}/scripts/prepare-harbor.sh"
   fi
 
-  log_phase 6 "${total}" "harbor_install"
+  log_phase 7 "${total}" "harbor_install"
   if [[ "${INSTALL_SKIP_HARBOR}" == "1" ]]; then
     printf 'SKIP: harbor_install\n'
   else
     run_step "harbor_install" run_harbor_install
   fi
 
-  log_phase 7 "${total}" "bootstrap"
+  log_phase 8 "${total}" "bootstrap"
   run_step "bootstrap" "${ROOT_DIR}/scripts/bootstrap-keycloak.sh"
 
-  log_phase 8 "${total}" "panel"
+  log_phase 9 "${total}" "panel"
   if [[ "${INSTALL_SKIP_PANEL}" == "1" ]]; then
     printf 'SKIP: panel\n'
   else
@@ -167,6 +170,9 @@ ensure_env() {
   set_env_if_missing "${env_file}" "HARBOR_PUBLIC_HOST" "harbor.localhost"
   set_env_if_missing "${env_file}" "BUSINESS_PANEL_HOST" "127.0.0.1"
   set_env_if_missing "${env_file}" "BUSINESS_PANEL_PORT" "8090"
+  set_env_if_missing "${env_file}" "PHPMYADMIN_ALLOWED_GROUP" "/platform-admins"
+  set_env_if_missing "${env_file}" "PHPMYADMIN_AUTOLOGIN_USER" "pma_appdb_admin"
+  set_env_if_missing "${env_file}" "PHPMYADMIN_AUTOLOGIN_PASSWORD" "ChangeMe_PhpMyAdmin_Autologin_123!"
 
   if grep -q "^KEYCLOAK_ADMIN_PASSWORD=ChangeMe_Keycloak_Admin_123!$" "${env_file}"; then
     replace_placeholder_if_present "${env_file}" "KEYCLOAK_ADMIN_PASSWORD" "ChangeMe_Keycloak_Admin_123!" "$(random_secret)"
@@ -186,5 +192,8 @@ import secrets
 print(secrets.token_hex(16))
 PY
 )"
+  fi
+  if grep -q "^PHPMYADMIN_AUTOLOGIN_PASSWORD=ChangeMe_PhpMyAdmin_Autologin_123!$" "${env_file}"; then
+    replace_placeholder_if_present "${env_file}" "PHPMYADMIN_AUTOLOGIN_PASSWORD" "ChangeMe_PhpMyAdmin_Autologin_123!" "$(random_secret)"
   fi
 }
