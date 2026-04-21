@@ -1,0 +1,31 @@
+[HTTP]
+Host = "0.0.0.0"
+Port = 17000
+
+[DB]
+# Follow upstream Nightingale config contract: DBType + DSN.
+DBType = "mysql"
+DSN = "nightingale:nightingale-dev-password@tcp(nightingale-mysql:3306)/nightingale?charset=utf8mb4&parseTime=True&loc=Local"
+
+[Redis]
+RedisType = "standalone"
+Address = "nightingale-redis:6379"
+Password = "nightingale-redis-dev-password"
+DB = 0
+
+[Auth.OIDC]
+Enable = true
+DisplayName = "OIDC"
+RedirectURL = "http://nightingale.localhost/callback"
+SsoAddr = "http://auth.localhost/realms/infra/protocol/openid-connect/auth"
+SsoLogoutAddr = "http://auth.localhost/realms/infra/protocol/openid-connect/logout"
+ClientId = "nightingale"
+ClientSecret = "nightingale-client-secret"
+CoverAttributes = true
+DefaultRoles = ["Standard"]
+Scopes = ["openid", "profile", "email"]
+
+[Auth.OIDC.Attributes]
+Username = "preferred_username"
+Nickname = "preferred_username"
+Email = "email"

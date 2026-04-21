@@ -135,6 +135,43 @@ class ConfigCatalogTest(unittest.TestCase):
         self.assertEqual(units["harbor"].auth_path, "/c/oidc/login")
         self.assertEqual(units["harbor"].auth_expectation, "best_effort")
 
+    def test_build_units_includes_nacos_and_nightingale(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_env(
+                root,
+                self._base_env_lines()
+                + [
+                    "NACOS_PUBLIC_HOST=nacos.custom.local",
+                    "NIGHTINGALE_PUBLIC_HOST=nightingale.custom.local",
+                ],
+            )
+            settings = load_settings(root)
+            units = {unit.unit_id: unit for unit in build_units(settings)}
+
+        self.assertEqual(settings.nacos_public_host, "nacos.custom.local")
+        self.assertEqual(settings.nightingale_public_host, "nightingale.custom.local")
+        self.assertEqual(units["nacos"].entry_url, "http://nacos.custom.local")
+        self.assertEqual(units["nightingale"].entry_url, "http://nightingale.custom.local")
+        self.assertEqual(units["nacos"].compose_scope, "main")
+        self.assertEqual(units["nightingale"].compose_scope, "main")
+        self.assertEqual(units["nacos"].start_services, ("nacos", "nacos-mysql"))
+        self.assertEqual(units["nacos"].stop_services, ("nacos", "nacos-mysql"))
+        self.assertEqual(
+            units["nightingale"].start_services,
+            ("nightingale", "nightingale-mysql", "nightingale-redis"),
+        )
+        self.assertEqual(
+            units["nightingale"].stop_services,
+            ("nightingale", "nightingale-mysql", "nightingale-redis"),
+        )
+        self.assertEqual(units["nacos"].auth_mode, "oidc_redirect")
+        self.assertEqual(units["nightingale"].auth_mode, "oidc_redirect")
+        self.assertEqual(units["nacos"].auth_path, "openid-connect/auth")
+        self.assertEqual(units["nightingale"].auth_path, "openid-connect/auth")
+        self.assertEqual(units["nacos"].auth_expectation, "required")
+        self.assertEqual(units["nightingale"].auth_expectation, "required")
+
     def test_load_settings_uses_business_panel_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

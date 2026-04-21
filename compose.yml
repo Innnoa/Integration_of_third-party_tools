@@ -200,6 +200,93 @@ services:
     networks:
       - tools_net
 
+  nacos-mysql:
+    image: ${NACOS_MYSQL_IMAGE:-mysql:8.4}
+    container_name: nacos-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: nacos
+      MYSQL_USER: nacos
+      MYSQL_PASSWORD: ${NACOS_DB_PASSWORD:-nacos-dev-password}
+      MYSQL_ROOT_PASSWORD: ${NACOS_DB_ROOT_PASSWORD:-nacos-root-dev-password}
+    volumes:
+      - nacos_mysql_data:/var/lib/mysql
+      - ./nacos/mysql-schema.sql:/docker-entrypoint-initdb.d/01-nacos-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p${NACOS_DB_ROOT_PASSWORD:-nacos-root-dev-password} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - tools_net
+
+  nacos:
+    image: ${NACOS_IMAGE:-nacos/nacos-server:latest}
+    container_name: nacos
+    restart: unless-stopped
+    environment:
+      MODE: standalone
+      SPRING_DATASOURCE_PLATFORM: mysql
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-VGhpc0lzTXlDdXN0b21TZWNyZXRLZXkwMTIzNDU2Nzg=}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-serverIdentity}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-security}
+    volumes:
+      - ./nacos/application.properties:/home/nacos/conf/application.properties:ro
+    depends_on:
+      nacos-mysql:
+        condition: service_healthy
+    networks:
+      - tools_net
+
+  nightingale-mysql:
+    image: ${NIGHTINGALE_MYSQL_IMAGE:-mysql:8.4}
+    container_name: nightingale-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: nightingale
+      MYSQL_USER: nightingale
+      MYSQL_PASSWORD: ${NIGHTINGALE_DB_PASSWORD:-nightingale-dev-password}
+      MYSQL_ROOT_PASSWORD: ${NIGHTINGALE_DB_ROOT_PASSWORD:-nightingale-root-dev-password}
+    volumes:
+      - nightingale_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p${NIGHTINGALE_DB_ROOT_PASSWORD:-nightingale-root-dev-password} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - tools_net
+
+  nightingale-redis:
+    image: ${NIGHTINGALE_REDIS_IMAGE:-redis:7.2-alpine}
+    container_name: nightingale-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${NIGHTINGALE_REDIS_PASSWORD:-nightingale-redis-dev-password}"]
+    volumes:
+      - nightingale_redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${NIGHTINGALE_REDIS_PASSWORD:-nightingale-redis-dev-password} ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - tools_net
+
+  nightingale:
+    image: ${NIGHTINGALE_IMAGE:-flashcatcloud/nightingale:latest}
+    container_name: nightingale
+    restart: unless-stopped
+    command: ["sh", "-c", "/app/n9e"]
+    volumes:
+      - ./nightingale/config.toml:/app/etc/config.toml:ro
+    depends_on:
+      nightingale-mysql:
+        condition: service_healthy
+      nightingale-redis:
+        condition: service_healthy
+    networks:
+      - tools_net
+
   oauth2-proxy-redisinsight:
     <<: *oauth2-proxy-common
     container_name: oauth2-proxy-redisinsight
@@ -255,6 +342,8 @@ services:
       - keycloak
       - portainer
       - kafka-ui
+      - nacos
+      - nightingale
       - oauth2-proxy-redisinsight
       - oauth2-proxy-phpmyadmin
       - oauth2-proxy-mongo-express
@@ -274,3 +363,6 @@ volumes:
   redisinsight_data:
   mariadb_data:
   mongodb_data:
+  nacos_mysql_data:
+  nightingale_mysql_data:
+  nightingale_redis_data:

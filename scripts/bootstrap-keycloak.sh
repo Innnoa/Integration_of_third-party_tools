@@ -14,6 +14,7 @@ source "${ENV_FILE}"
 set +a
 
 KCADM=(docker exec keycloak /opt/keycloak/bin/kcadm.sh)
+KEYCLOAK_PUBLIC_ISSUER="${PUBLIC_SCHEME}://${KEYCLOAK_PUBLIC_HOST}/realms/${KEYCLOAK_REALM}"
 
 wait_for_keycloak() {
   local retries=60
@@ -100,7 +101,6 @@ create_or_update_client() {
       -s standardFlowEnabled=true \
       -s directAccessGrantsEnabled=false \
       -s serviceAccountsEnabled=false \
-      -s 'attributes."post.logout.redirect.uris"=["+"]' \
       -s "redirectUris=${redirect_uris}" \
       -s "webOrigins=${web_origins}"
     client_uuid="$(get_client_uuid "${client_id}")"
@@ -118,6 +118,7 @@ create_or_update_client() {
   fi
 
   "${KCADM[@]}" update "clients/${client_uuid}" -r "${KEYCLOAK_REALM}" \
+    -s 'attributes."post.logout.redirect.uris"="+"' \
     -s secret="${secret}" >/dev/null
 }
 
@@ -234,6 +235,18 @@ create_or_update_client \
   "${HARBOR_CLIENT_SECRET}" \
   "[\"${PUBLIC_SCHEME}://${HARBOR_PUBLIC_HOST}/*\"]" \
   "[\"${PUBLIC_SCHEME}://${HARBOR_PUBLIC_HOST}\"]"
+
+create_or_update_client \
+  "nacos" \
+  "${NACOS_CLIENT_SECRET:-nacos-client-secret}" \
+  "[\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}/*\"]" \
+  "[\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}\"]"
+
+create_or_update_client \
+  "nightingale" \
+  "${NIGHTINGALE_CLIENT_SECRET:-nightingale-client-secret}" \
+  "[\"${PUBLIC_SCHEME}://${NIGHTINGALE_PUBLIC_HOST}/callback\"]" \
+  "[\"${PUBLIC_SCHEME}://${NIGHTINGALE_PUBLIC_HOST}\"]"
 
 for client_name in portainer "${KAFKA_UI_CLIENT_ID}" "${OAUTH2_PROXY_CLIENT_ID}" "${HARBOR_CLIENT_ID}"; do
   create_groups_mapper "${client_name}"

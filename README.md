@@ -13,6 +13,8 @@
 - mongo-express + MongoDB
 - oauth2-proxy
 - Harbor
+- Nacos
+- Nightingale
 
 ## 目录结构
 
@@ -152,6 +154,8 @@
 - phpMyAdmin: `http://pma.localhost`
 - mongo-express: `http://mongo.localhost`
 - Harbor: `http://harbor.localhost`
+- Nacos: `http://nacos.localhost`
+- Nightingale: `http://nightingale.localhost`
 
 非 Web 入口仍单独保留：
 
@@ -178,7 +182,7 @@ http://BUSINESS_PANEL_HOST:BUSINESS_PANEL_PORT
 
 ### v1 能力范围
 
-- 业务卡片提供直达链接：Keycloak、Portainer、KafkaUI、RedisInsight、phpMyAdmin、mongo-express、Harbor
+- 业务卡片提供直达链接：Keycloak、Portainer、KafkaUI、RedisInsight、phpMyAdmin、mongo-express、Harbor、Nacos、Nightingale
 - 每个业务单元提供三层状态：`container / endpoint / auth`
 - 支持栈级控制：`all` 的 `start / stop / restart`
 - 支持业务单元级控制：每张业务卡片的 `start / stop / restart`
@@ -201,6 +205,8 @@ http://BUSINESS_PANEL_HOST:BUSINESS_PANEL_PORT
 127.0.0.1 pma.localhost
 127.0.0.1 mongo.localhost
 127.0.0.1 harbor.localhost
+127.0.0.1 nacos.localhost
+127.0.0.1 nightingale.localhost
 ```
 
 Windows `hosts` 示例：
@@ -213,9 +219,11 @@ Windows `hosts` 示例：
 127.0.0.1 pma.localhost
 127.0.0.1 mongo.localhost
 127.0.0.1 harbor.localhost
+127.0.0.1 nacos.localhost
+127.0.0.1 nightingale.localhost
 ```
 
-如果你把 `.env` 中的 `KEYCLOAK_PUBLIC_HOST`、`PORTAINER_PUBLIC_HOST`、`KAFKA_UI_PUBLIC_HOST`、`REDISINSIGHT_PUBLIC_HOST`、`PHPMYADMIN_PUBLIC_HOST`、`MONGO_EXPRESS_PUBLIC_HOST`、`HARBOR_PUBLIC_HOST` 改成了其他值，`hosts` 也要同步改成这些当前值。
+如果你把 `.env` 中的 `KEYCLOAK_PUBLIC_HOST`、`PORTAINER_PUBLIC_HOST`、`KAFKA_UI_PUBLIC_HOST`、`REDISINSIGHT_PUBLIC_HOST`、`PHPMYADMIN_PUBLIC_HOST`、`MONGO_EXPRESS_PUBLIC_HOST`、`HARBOR_PUBLIC_HOST`、`NACOS_PUBLIC_HOST`、`NIGHTINGALE_PUBLIC_HOST` 改成了其他值，`hosts` 也要同步改成这些当前值。
 
 统一入口主机名：
 
@@ -226,17 +234,21 @@ Windows `hosts` 示例：
 - phpMyAdmin: `http://pma.localhost`
 - mongo-express: `http://mongo.localhost`
 - Harbor: `http://harbor.localhost`
+- Nacos: `http://nacos.localhost`
+- Nightingale: `http://nightingale.localhost`
 
 说明：
 
 - 当前方案默认关闭旧的 Web 宿主机端口入口，仅保留统一入口 `80`
 - 新的浏览器公开地址、OAuth redirect URI 和业务面板直达链接都以各服务自己的 `*_PUBLIC_HOST` 为准
+- 包括 Nacos 与 Nightingale 在内，统一入口下都使用同一个 `auth.localhost`（Keycloak）登录会话
 - `PUBLIC_HOST` 仍保留给当前主栈里尚未拆分的地址用途，例如 Kafka 宿主机 broker 广播地址
 
 ### v1 限制
 
 - Portainer 在 v1 中不做稳定的端到端认证检查（仅保留 `not_checked` 级别）
 - Harbor OIDC 在 v1 仅做页面级证据检查，不读取 Harbor 后台配置
+- Nacos 与 Nightingale 在 v1 只保证接通 Keycloak 登录；角色、团队和管理员映射暂未自动化
 
 ## Keycloak 初始化
 

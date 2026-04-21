@@ -28,6 +28,8 @@ class PanelSettings:
     phpmyadmin_public_host: str = "pma.localhost"
     mongo_express_public_host: str = "mongo.localhost"
     harbor_public_host: str = "harbor.localhost"
+    nacos_public_host: str = "nacos.localhost"
+    nightingale_public_host: str = "nightingale.localhost"
 
 
 def _load_env(env_path: Path) -> dict[str, str]:
@@ -100,4 +102,10 @@ def load_settings(root_dir: Path) -> PanelSettings:
         phpmyadmin_public_host=_optional_str(env_values, "PHPMYADMIN_PUBLIC_HOST", "pma.localhost"),
         mongo_express_public_host=_optional_str(env_values, "MONGO_EXPRESS_PUBLIC_HOST", "mongo.localhost"),
         harbor_public_host=_optional_str(env_values, "HARBOR_PUBLIC_HOST", "harbor.localhost"),
+        nacos_public_host=_optional_str(env_values, "NACOS_PUBLIC_HOST", "nacos.localhost"),
+        nightingale_public_host=_optional_str(
+            env_values,
+            "NIGHTINGALE_PUBLIC_HOST",
+            "nightingale.localhost",
+        ),
     )
