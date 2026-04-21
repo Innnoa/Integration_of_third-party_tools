@@ -28,6 +28,18 @@ class PhpMyAdminAutologinContractTest(unittest.TestCase):
         ):
             self.assertIn(needle, text)
 
+    def test_readme_documents_group_gate_autologin_and_repair(self) -> None:
+        text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        for needle in (
+            "只有 `platform-admins` 组成员可以进入 phpMyAdmin",
+            "进入后会自动使用固定 MariaDB 账号登录",
+            "该账号只授权 `appdb`",
+            "非 `platform-admins` 成员会收到 `403`",
+            "./install.sh --repair",
+            "./scripts/repair-mariadb-phpmyadmin-user.sh",
+        ):
+            self.assertIn(needle, text)
+
 
 if __name__ == "__main__":
     unittest.main()
