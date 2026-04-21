@@ -168,7 +168,12 @@ services:
       PMA_HOST: mariadb
       PMA_PORT: 3306
       PMA_ABSOLUTE_URI: ${PUBLIC_SCHEME}://${PHPMYADMIN_PUBLIC_HOST}/
+      MARIADB_DATABASE: ${MARIADB_DATABASE}
+      PHPMYADMIN_AUTOLOGIN_USER: ${PHPMYADMIN_AUTOLOGIN_USER}
+      PHPMYADMIN_AUTOLOGIN_PASSWORD: ${PHPMYADMIN_AUTOLOGIN_PASSWORD}
       UPLOAD_LIMIT: 256M
+    volumes:
+      - ./phpmyadmin/config.user.inc.php:/etc/phpmyadmin/config.user.inc.php:ro
     depends_on:
       - mariadb
     networks:
@@ -223,6 +228,7 @@ services:
       - --redirect-url=${PUBLIC_SCHEME}://${PHPMYADMIN_PUBLIC_HOST}/oauth2/callback
       - --upstream=http://phpmyadmin:80/
       - --cookie-name=_oauth2_proxy_pma
+      - --allowed-group=${PHPMYADMIN_ALLOWED_GROUP}
     depends_on:
       - keycloak
       - redis
