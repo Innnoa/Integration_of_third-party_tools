@@ -167,7 +167,7 @@ class ConfigCatalogTest(unittest.TestCase):
         )
         self.assertEqual(units["nacos"].auth_mode, "oidc_redirect")
         self.assertEqual(units["nightingale"].auth_mode, "oidc_redirect")
-        self.assertEqual(units["nacos"].auth_path, "openid-connect/auth")
+        self.assertEqual(units["nacos"].auth_path, "/v1/auth/oidc/login")
         self.assertEqual(units["nightingale"].auth_path, "openid-connect/auth")
         self.assertEqual(units["nacos"].auth_expectation, "required")
         self.assertEqual(units["nightingale"].auth_expectation, "required")

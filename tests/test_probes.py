@@ -331,6 +331,41 @@ class ProbeAuthTest(unittest.TestCase):
 
         self.assertEqual(result.level, "ok")
 
+    def test_probe_auth_nacos_uses_oidc_login_endpoint(self) -> None:
+        unit = _unit(
+            unit_id="nacos",
+            entry_url="http://nacos.localhost",
+            auth_mode="oidc_redirect",
+            auth_path="/v1/auth/oidc/login",
+        )
+        client = FakeProbeClient(
+            {
+                "http://nacos.localhost": HttpResponse(status=200, headers={}, body=""),
+                "http://nacos.localhost/v1/auth/oidc/login": HttpResponse(
+                    status=302,
+                    headers={
+                        "Location": (
+                            "http://auth.localhost/realms/infra/protocol/openid-connect/auth"
+                            "?client_id=nacos"
+                            "&redirect_uri=http%3A%2F%2Fnacos.localhost%2Fv1%2Fauth%2Foidc%2Fcallback"
+                        )
+                    },
+                    body="",
+                ),
+            }
+        )
+
+        result = probe_auth(unit, client, harbor_installed=True)
+
+        self.assertEqual(client.calls, [("http://nacos.localhost/v1/auth/oidc/login", False)])
+        self.assertEqual(result.level, "ok")
+        location = client.responses["http://nacos.localhost/v1/auth/oidc/login"].headers.get("Location", "")
+        self.assertIn("client_id=nacos", location)
+        self.assertIn(
+            "redirect_uri=http%3A%2F%2Fnacos.localhost%2Fv1%2Fauth%2Foidc%2Fcallback",
+            location,
+        )
+
     def test_probe_auth_nightingale_accepts_oidc_redirect(self) -> None:
         unit = _unit(
             unit_id="nightingale",
@@ -481,7 +516,7 @@ class Task3OidcConfigContractTest(unittest.TestCase):
             bootstrap_clients["nacos"],
             {
                 "secret": "${NACOS_CLIENT_SECRET:-nacos-client-secret}",
-                "redirect_uris": "[\\\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}/*\\\"]",
+                "redirect_uris": "[\\\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}/v1/auth/oidc/callback\\\"]",
                 "web_origins": "[\\\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}\\\"]",
             },
         )

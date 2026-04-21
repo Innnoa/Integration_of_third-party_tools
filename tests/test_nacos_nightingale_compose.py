@@ -42,6 +42,10 @@ class ComposeExtensionTest(unittest.TestCase):
             "NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-security}",
             nacos,
         )
+        self.assertIn(
+            "./nacos/plugins/caffeine-3.1.8.jar:/home/nacos/plugins/caffeine-3.1.8.jar:ro",
+            nacos,
+        )
 
         nightingale_mysql = self._service_block(compose, "nightingale-mysql")
         self.assertIn("image: ${NIGHTINGALE_MYSQL_IMAGE:-mysql:8.4}", nightingale_mysql)
