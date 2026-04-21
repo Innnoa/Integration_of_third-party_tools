@@ -94,7 +94,7 @@ function renderCards(units) {
             <li>认证：${escapeHtml(unit.auth.summary)}</li>
           </ul>
           <div class="actions">
-            <a class="link-button" href="${escapeHtml(unit.entry_url)}" target="_blank" rel="noreferrer">打开</a>
+            <a class="link-button" href="${escapeHtml(unit.open_url || unit.entry_url)}" target="_blank" rel="noreferrer">打开</a>
             ${unit.available_actions
               .map(
                 (action) =>

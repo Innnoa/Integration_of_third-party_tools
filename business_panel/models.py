@@ -47,6 +47,7 @@ class UnitSnapshot:
     endpoint: ProbeResult
     auth: ProbeResult
     available_actions: tuple[str, ...]
+    open_url: str | None = None
     _VALID_AUTH_EXPECTATIONS: ClassVar[frozenset[str]] = frozenset({"required", "best_effort", "not_checked"})
 
     def __post_init__(self) -> None:
@@ -60,6 +61,7 @@ class UnitSummary:
     display_name: str
     description: str
     entry_url: str
+    open_url: str
     auth_expectation: AuthExpectation
     container: ProbeResult
     endpoint: ProbeResult
@@ -79,6 +81,7 @@ class UnitSummary:
             "display_name": self.display_name,
             "description": self.description,
             "entry_url": self.entry_url,
+            "open_url": self.open_url,
             "auth_expectation": self.auth_expectation,
             "container": asdict(self.container),
             "endpoint": asdict(self.endpoint),

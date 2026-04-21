@@ -18,6 +18,7 @@ class UnitDefinition:
     auth_mode: str
     auth_path: str
     auth_expectation: str
+    open_url: str | None = None
 
 
 def _public_url(scheme: str, host: str, port: int) -> str:
@@ -38,6 +39,10 @@ def build_units(settings: PanelSettings) -> tuple[UnitDefinition, ...]:
             auth_mode="metadata",
             auth_path=f"/realms/{settings.keycloak_realm}/.well-known/openid-configuration",
             auth_expectation="required",
+            open_url=(
+                f"{settings.public_scheme}://{settings.keycloak_public_host}"
+                f"/realms/{settings.keycloak_realm}/account/"
+            ),
         ),
         UnitDefinition(
             unit_id="portainer",
@@ -102,6 +107,32 @@ def build_units(settings: PanelSettings) -> tuple[UnitDefinition, ...]:
             shared_dependencies=("mongodb",),
             auth_mode="oauth2_proxy_redirect",
             auth_path="/oauth2/",
+            auth_expectation="required",
+        ),
+        UnitDefinition(
+            unit_id="nacos",
+            display_name="Nacos",
+            description="Configuration and service discovery platform.",
+            entry_url=f"{settings.public_scheme}://{settings.nacos_public_host}",
+            compose_scope="main",
+            start_services=("nacos", "nacos-mysql"),
+            stop_services=("nacos", "nacos-mysql"),
+            shared_dependencies=(),
+            auth_mode="oidc_redirect",
+            auth_path="openid-connect/auth",
+            auth_expectation="required",
+        ),
+        UnitDefinition(
+            unit_id="nightingale",
+            display_name="Nightingale",
+            description="Observability and alerting platform.",
+            entry_url=f"{settings.public_scheme}://{settings.nightingale_public_host}",
+            compose_scope="main",
+            start_services=("nightingale", "nightingale-mysql", "nightingale-redis"),
+            stop_services=("nightingale", "nightingale-mysql", "nightingale-redis"),
+            shared_dependencies=(),
+            auth_mode="oidc_redirect",
+            auth_path="openid-connect/auth",
             auth_expectation="required",
         ),
         UnitDefinition(
