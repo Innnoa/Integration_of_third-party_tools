@@ -86,9 +86,12 @@ def probe_auth(
         return ProbeResult.fail("认证元数据异常")
 
     if unit.auth_mode == "oidc_redirect":
-        response = client.fetch(unit.entry_url)
+        target = unit.entry_url
+        if unit.unit_id == "nacos" and unit.auth_path.startswith("/"):
+            target = f"{unit.entry_url}{unit.auth_path}"
+        response = client.fetch(target)
         location = _header_value(response.headers, "Location")
-        if unit.auth_path in location or "/oauth2/authorization/" in location:
+        if unit.auth_path in location or "openid-connect/auth" in location or "/oauth2/authorization/" in location:
             return ProbeResult.ok("检测到 OIDC 跳转")
         return ProbeResult.fail("未检测到 OIDC 跳转")
 

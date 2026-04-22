@@ -239,7 +239,7 @@ create_or_update_client \
 create_or_update_client \
   "nacos" \
   "${NACOS_CLIENT_SECRET:-nacos-client-secret}" \
-  "[\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}/*\"]" \
+  "[\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}/v1/auth/oidc/callback\"]" \
   "[\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}\"]"
 
 create_or_update_client \

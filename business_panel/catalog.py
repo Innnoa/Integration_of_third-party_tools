@@ -114,7 +114,7 @@ def build_units(settings: PanelSettings) -> tuple[UnitDefinition, ...]:
             stop_services=("nacos", "nacos-mysql"),
             shared_dependencies=(),
             auth_mode="oidc_redirect",
-            auth_path="openid-connect/auth",
+            auth_path="/v1/auth/oidc/login",
             auth_expectation="required",
         ),
         UnitDefinition(

@@ -237,6 +237,7 @@ services:
       NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-security}
     volumes:
       - ./nacos/application.properties:/home/nacos/conf/application.properties:ro
+      - ./nacos/plugins/caffeine-3.1.8.jar:/home/nacos/plugins/caffeine-3.1.8.jar:ro
     depends_on:
       nacos-mysql:
         condition: service_healthy
