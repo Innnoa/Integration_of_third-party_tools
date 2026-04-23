@@ -1,6 +1,7 @@
 .codex
 .env
 .codex/
+.serena/
 .superpowers/
 .pytest_cache/
 __pycache__/
