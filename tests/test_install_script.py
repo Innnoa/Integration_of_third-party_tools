@@ -64,6 +64,204 @@ def parse_env(text: str) -> dict[str, str]:
 
 
 class InstallScriptTest(unittest.TestCase):
+    def test_install_apt_prefers_docker_compose_plugin_package_when_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
+
+            fakebin = root / "fakebin"
+            fakebin.mkdir()
+            install_log = root / "deps.log"
+            write_executable(
+                fakebin / "docker",
+                "#!/usr/bin/env bash\n"
+                "if [ \"$1\" = \"compose\" ] && [ \"$2\" = \"version\" ]; then\n"
+                "  exit 1\n"
+                "fi\n"
+                "exit 0\n",
+            )
+            write_executable(
+                fakebin / "sudo",
+                "#!/usr/bin/env bash\n"
+                "\"$@\"\n",
+            )
+            write_executable(
+                fakebin / "apt-get",
+                "#!/usr/bin/env bash\n"
+                "echo apt-get:$* >> \"$INSTALL_LOG\"\n"
+                "if [ \"$1\" = \"install\" ]; then\n"
+                "  shift 2\n"
+                "  if [ \"$1\" = \"docker-compose-plugin\" ]; then\n"
+                "    cat > \"$INSTALL_FAKEBIN/docker\" <<'EOF'\n"
+                "#!/usr/bin/env bash\n"
+                "if [ \"$1\" = \"compose\" ] && [ \"$2\" = \"version\" ]; then\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 0\n"
+                "EOF\n"
+                "    chmod +x \"$INSTALL_FAKEBIN/docker\"\n"
+                "    exit 0\n"
+                "  fi\n"
+                "fi\n"
+                "exit 1\n",
+            )
+            result = subprocess.run(
+                ["bash", "install.sh", "--skip-panel", "--skip-harbor"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "PATH": f"{fakebin}:{os.environ['PATH']}",
+                    "INSTALL_LOG": str(install_log),
+                    "INSTALL_FAKEBIN": str(fakebin),
+                    "INSTALL_REQUIRED_COMMANDS": "docker-compose-plugin",
+                    "INSTALL_PACKAGE_MANAGER": "apt-get",
+                },
+            )
+            log_text = install_log.read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("apt-get:install -y docker-compose-plugin", log_text)
+
+    def test_install_apt_falls_back_to_docker_compose_v2_when_plugin_package_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
+
+            fakebin = root / "fakebin"
+            fakebin.mkdir()
+            install_log = root / "deps.log"
+            write_executable(
+                fakebin / "docker",
+                "#!/usr/bin/env bash\n"
+                "if [ \"$1\" = \"compose\" ] && [ \"$2\" = \"version\" ]; then\n"
+                "  exit 1\n"
+                "fi\n"
+                "exit 0\n",
+            )
+            write_executable(
+                fakebin / "sudo",
+                "#!/usr/bin/env bash\n"
+                "\"$@\"\n",
+            )
+            write_executable(
+                fakebin / "apt-get",
+                "#!/usr/bin/env bash\n"
+                "echo apt-get:$* >> \"$INSTALL_LOG\"\n"
+                "if [ \"$1\" = \"install\" ]; then\n"
+                "  shift 2\n"
+                "  if [ \"$1\" = \"docker-compose-plugin\" ]; then\n"
+                "    exit 100\n"
+                "  fi\n"
+                "  if [ \"$1\" = \"docker-compose-v2\" ]; then\n"
+                "    cat > \"$INSTALL_FAKEBIN/docker\" <<'EOF'\n"
+                "#!/usr/bin/env bash\n"
+                "if [ \"$1\" = \"compose\" ] && [ \"$2\" = \"version\" ]; then\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 0\n"
+                "EOF\n"
+                "    chmod +x \"$INSTALL_FAKEBIN/docker\"\n"
+                "    exit 0\n"
+                "  fi\n"
+                "fi\n"
+                "exit 1\n",
+            )
+            result = subprocess.run(
+                ["bash", "install.sh", "--skip-panel", "--skip-harbor"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "PATH": f"{fakebin}:{os.environ['PATH']}",
+                    "INSTALL_LOG": str(install_log),
+                    "INSTALL_FAKEBIN": str(fakebin),
+                    "INSTALL_REQUIRED_COMMANDS": "docker-compose-plugin",
+                    "INSTALL_PACKAGE_MANAGER": "apt-get",
+                },
+            )
+            log_text = install_log.read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("apt-get:install -y docker-compose-plugin", log_text)
+        self.assertIn("apt-get:install -y docker-compose-v2", log_text)
+
+    def test_install_apt_falls_back_to_docker_compose_package_when_v2_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
+
+            fakebin = root / "fakebin"
+            fakebin.mkdir()
+            install_log = root / "deps.log"
+            write_executable(
+                fakebin / "docker",
+                "#!/usr/bin/env bash\n"
+                "if [ \"$1\" = \"compose\" ] && [ \"$2\" = \"version\" ]; then\n"
+                "  exit 1\n"
+                "fi\n"
+                "exit 0\n",
+            )
+            write_executable(
+                fakebin / "sudo",
+                "#!/usr/bin/env bash\n"
+                "\"$@\"\n",
+            )
+            write_executable(
+                fakebin / "apt-get",
+                "#!/usr/bin/env bash\n"
+                "echo apt-get:$* >> \"$INSTALL_LOG\"\n"
+                "if [ \"$1\" = \"install\" ]; then\n"
+                "  shift 2\n"
+                "  if [ \"$1\" = \"docker-compose-plugin\" ] || [ \"$1\" = \"docker-compose-v2\" ]; then\n"
+                "    exit 100\n"
+                "  fi\n"
+                "  if [ \"$1\" = \"docker-compose\" ]; then\n"
+                "    cat > \"$INSTALL_FAKEBIN/docker\" <<'EOF'\n"
+                "#!/usr/bin/env bash\n"
+                "if [ \"$1\" = \"compose\" ] && [ \"$2\" = \"version\" ]; then\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 0\n"
+                "EOF\n"
+                "    chmod +x \"$INSTALL_FAKEBIN/docker\"\n"
+                "    exit 0\n"
+                "  fi\n"
+                "fi\n"
+                "exit 1\n",
+            )
+            result = subprocess.run(
+                ["bash", "install.sh", "--skip-panel", "--skip-harbor"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "PATH": f"{fakebin}:{os.environ['PATH']}",
+                    "INSTALL_LOG": str(install_log),
+                    "INSTALL_FAKEBIN": str(fakebin),
+                    "INSTALL_REQUIRED_COMMANDS": "docker-compose-plugin",
+                    "INSTALL_PACKAGE_MANAGER": "apt-get",
+                },
+            )
+            log_text = install_log.read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("apt-get:install -y docker-compose-plugin", log_text)
+        self.assertIn("apt-get:install -y docker-compose-v2", log_text)
+        self.assertIn("apt-get:install -y docker-compose", log_text)
+
     def test_install_auto_installs_missing_dependencies_with_supported_package_manager(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

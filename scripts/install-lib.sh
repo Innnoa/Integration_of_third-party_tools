@@ -533,7 +533,7 @@ detect_package_manager() {
   fi
 }
 
-package_name_for_dependency() {
+package_candidates_for_dependency() {
   local manager="$1"
   local dependency="$2"
 
@@ -552,6 +552,11 @@ package_name_for_dependency() {
       ;;
     docker-compose-plugin)
       case "${manager}" in
+        apt-get)
+          printf 'docker-compose-plugin\n'
+          printf 'docker-compose-v2\n'
+          printf 'docker-compose\n'
+          ;;
         pacman|zypper) printf 'docker-compose\n' ;;
         *) printf 'docker-compose-plugin\n' ;;
       esac
@@ -560,6 +565,19 @@ package_name_for_dependency() {
       printf '%s\n' "${dependency}"
       ;;
   esac
+}
+
+package_name_for_dependency() {
+  local manager="$1"
+  local dependency="$2"
+  local package=""
+
+  while IFS= read -r package; do
+    printf '%s\n' "${package}"
+    return 0
+  done < <(package_candidates_for_dependency "${manager}" "${dependency}")
+
+  return 1
 }
 
 append_unique_word() {
@@ -618,6 +636,24 @@ install_dependencies() {
   esac
 }
 
+install_apt_dependency() {
+  local dependency="$1"
+  local candidate=""
+  local status=1
+  local -a candidates=()
+
+  mapfile -t candidates < <(package_candidates_for_dependency "apt-get" "${dependency}")
+  for candidate in "${candidates[@]}"; do
+    if run_privileged apt-get install -y "${candidate}"; then
+      return 0
+    fi
+    status=$?
+  done
+
+  echo "apt-get 无法安装依赖 ${dependency}，已尝试: ${candidates[*]}" >&2
+  return "${status}"
+}
+
 deps_stage() {
   local -a missing=()
   local manager=""
@@ -634,14 +670,21 @@ deps_stage() {
     return 1
   }
 
-  for dependency in "${missing[@]}"; do
-    package="$(package_name_for_dependency "${manager}" "${dependency}")"
-    packages_text="$(append_unique_word "${packages_text}" "${package}")"
-  done
+  if [[ "${manager}" == "apt-get" ]]; then
+    run_privileged apt-get update
+    for dependency in "${missing[@]}"; do
+      install_apt_dependency "${dependency}" || return 1
+    done
+  else
+    for dependency in "${missing[@]}"; do
+      package="$(package_name_for_dependency "${manager}" "${dependency}")"
+      packages_text="$(append_unique_word "${packages_text}" "${package}")"
+    done
 
-  # shellcheck disable=SC2206
-  local packages=(${packages_text})
-  install_dependencies "${manager}" "${packages[@]}"
+    # shellcheck disable=SC2206
+    local packages=(${packages_text})
+    install_dependencies "${manager}" "${packages[@]}"
+  fi
 
   mapfile -t missing < <(collect_missing_dependencies)
   if (( ${#missing[@]} > 0 )); then

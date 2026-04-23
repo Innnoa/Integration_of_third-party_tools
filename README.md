@@ -80,7 +80,7 @@
 推荐在 Linux 或 WSL2 的 Linux 文件系统中运行，并提前准备：
 
 - Docker
-- Docker Compose Plugin
+- Docker Compose v2（`docker compose`）
 - Python 3
 - `sudo` 权限（推荐安装路径会写当前 Linux 主机的 `hosts`）
 
@@ -89,6 +89,42 @@
 - 数据目录建议放 Linux 文件系统，不要放 `/mnt/c/...`
 - OIDC 相关主机名不要混用 `localhost` 和 IP
 - 如果你在 WSL2 中使用浏览器，Windows 宿主机的 `hosts` 仍需手动补齐
+- 仅有旧版 `docker-compose` v1 命令时，不算满足当前脚本依赖；安装链路检查的是 `docker compose version`
+
+## 发行版支持矩阵
+
+这里区分“脚本已适配”与“整套环境已完整验证”，不再统一写成一句“都支持”。
+
+- Debian 13 `trixie`：当前脚本路径最稳，Compose 包名与安装回退逻辑已针对这条路径修复，并有自动化测试覆盖
+- Ubuntu 22.04 / 24.04：`apt` 路径已适配 `docker-compose-plugin -> docker-compose-v2 -> docker-compose` 回退，脚本层兼容性明显更稳，但仍建议先跑安装前自检
+- Fedora / RHEL / Rocky / AlmaLinux / CentOS：当前有 `dnf` / `yum` 包管理器映射，属于“脚本已覆盖包管理器路径”，不是“整套环境已完整验证”
+- Arch Linux：当前有 `pacman` 包管理器映射，适合先跑安装前自检后再安装
+- openSUSE / SLES：当前有 `zypper` 包管理器映射，适合先跑安装前自检后再安装
+- 其他发行版：不默认承诺稳定兼容，建议先人工确认依赖安装方式
+
+## 安装前自检
+
+在首次安装前，建议先执行：
+
+```bash
+./scripts/check-install-prereqs.sh
+```
+
+脚本会输出：
+
+- 当前发行版与版本
+- 当前识别到的包管理器
+- `python3`、`docker`、`docker compose`、`sudo` 状态
+- 当前发行版下推导出的 Docker / Compose 候选包名
+- 最终结论：`ready`、`installable` 或 `blocked`
+
+结果解释：
+
+- `ready`：当前主机已具备关键依赖，可以继续执行安装
+- `installable`：依赖还不完整，但当前脚本能够识别包管理器并尝试安装
+- `blocked`：当前主机缺少受支持的包管理器，或缺少基本提权条件，需要先人工处理
+
+如果你只是想看当前 `apt` 系发行版会尝试哪些 Compose 包，这个脚本也会直接打印出来。
 
 ## 推荐安装路径
 
@@ -270,6 +306,7 @@ cd harbor/installer
 ### 其他常用脚本
 
 ```bash
+./scripts/check-install-prereqs.sh
 ./scripts/check-main.sh
 ./scripts/repair-mariadb-phpmyadmin-user.sh
 ```
