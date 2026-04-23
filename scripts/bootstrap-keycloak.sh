@@ -227,8 +227,8 @@ create_or_update_client \
 create_or_update_client \
   "${OAUTH2_PROXY_CLIENT_ID}" \
   "${OAUTH2_PROXY_CLIENT_SECRET}" \
-  "[\"${PUBLIC_SCHEME}://${REDISINSIGHT_PUBLIC_HOST}/oauth2/callback\",\"${PUBLIC_SCHEME}://${PHPMYADMIN_PUBLIC_HOST}/oauth2/callback\",\"${PUBLIC_SCHEME}://${MONGO_EXPRESS_PUBLIC_HOST}/oauth2/callback\"]" \
-  "[\"${PUBLIC_SCHEME}://${REDISINSIGHT_PUBLIC_HOST}\",\"${PUBLIC_SCHEME}://${PHPMYADMIN_PUBLIC_HOST}\",\"${PUBLIC_SCHEME}://${MONGO_EXPRESS_PUBLIC_HOST}\"]"
+  "[\"${PUBLIC_SCHEME}://${REDISINSIGHT_PUBLIC_HOST}/oauth2/callback\",\"${PUBLIC_SCHEME}://${PHPMYADMIN_PUBLIC_HOST}/oauth2/callback\",\"${PUBLIC_SCHEME}://${MONGO_EXPRESS_PUBLIC_HOST}/oauth2/callback\",\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}/oauth2/callback\"]" \
+  "[\"${PUBLIC_SCHEME}://${REDISINSIGHT_PUBLIC_HOST}\",\"${PUBLIC_SCHEME}://${PHPMYADMIN_PUBLIC_HOST}\",\"${PUBLIC_SCHEME}://${MONGO_EXPRESS_PUBLIC_HOST}\",\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}\"]"
 
 create_or_update_client \
   "${HARBOR_CLIENT_ID}" \
@@ -237,14 +237,8 @@ create_or_update_client \
   "[\"${PUBLIC_SCHEME}://${HARBOR_PUBLIC_HOST}\"]"
 
 create_or_update_client \
-  "nacos" \
-  "${NACOS_CLIENT_SECRET:-nacos-client-secret}" \
-  "[\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}/*\"]" \
-  "[\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}\"]"
-
-create_or_update_client \
   "nightingale" \
-  "${NIGHTINGALE_CLIENT_SECRET:-nightingale-client-secret}" \
+  "${NIGHTINGALE_CLIENT_SECRET}" \
   "[\"${PUBLIC_SCHEME}://${NIGHTINGALE_PUBLIC_HOST}/callback\"]" \
   "[\"${PUBLIC_SCHEME}://${NIGHTINGALE_PUBLIC_HOST}\"]"
 

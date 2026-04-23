@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nightingale 登录回调</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: sans-serif;
+        background: #f6f8fb;
+        color: #1f2937;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+      }
+
+      .panel {
+        width: min(560px, 92vw);
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 16px 40px rgba(15, 23, 42, 0.12);
+        padding: 24px;
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        font-size: 20px;
+      }
+
+      p {
+        margin: 0 0 12px;
+        line-height: 1.6;
+      }
+
+      code {
+        word-break: break-all;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="panel">
+      <h1>正在完成 Nightingale 登录</h1>
+      <p id="status">正在交换 token，请稍候...</p>
+      <p id="detail"></p>
+    </div>
+    <script>
+      (async () => {
+        const statusEl = document.getElementById("status");
+        const detailEl = document.getElementById("detail");
+        try {
+          const params = new URLSearchParams(window.location.search);
+          if (!params.has("redirect")) {
+            params.set("redirect", "/");
+          }
+
+          const resp = await fetch(`/api/n9e/auth/callback?${params.toString()}`, {
+            credentials: "same-origin",
+          });
+          const payload = await resp.json();
+
+          if (payload.err) {
+            throw new Error(payload.err);
+          }
+
+          if (!payload.dat || !payload.dat.access_token || !payload.dat.refresh_token) {
+            throw new Error("callback 未返回 access_token / refresh_token");
+          }
+
+          localStorage.setItem("access_token", payload.dat.access_token);
+          localStorage.setItem("refresh_token", payload.dat.refresh_token);
+          document.cookie = `n9e_access_token=${encodeURIComponent(payload.dat.access_token)}; Path=/; SameSite=Lax`;
+          document.cookie = `n9e_refresh_token=${encodeURIComponent(payload.dat.refresh_token)}; Path=/; SameSite=Lax`;
+
+          statusEl.textContent = "登录成功，正在跳转...";
+          const target = payload.dat.redirect || "/";
+          window.location.replace(
+            `/_n9e_finish?access_token=${encodeURIComponent(payload.dat.access_token)}&refresh_token=${encodeURIComponent(payload.dat.refresh_token)}&redirect=${encodeURIComponent(target)}`
+          );
+        } catch (error) {
+          statusEl.textContent = "登录失败";
+          detailEl.innerHTML = `<code>${String(error)}</code>`;
+        }
+      })();
+    </script>
+  </body>
+</html>

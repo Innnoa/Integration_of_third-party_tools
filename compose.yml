@@ -230,6 +230,7 @@ services:
     container_name: nacos
     restart: unless-stopped
     environment:
+      NACOS_DEPLOYMENT_TYPE: ${NACOS_DEPLOYMENT_TYPE:-merged}
       MODE: standalone
       SPRING_DATASOURCE_PLATFORM: mysql
       NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-VGhpc0lzTXlDdXN0b21TZWNyZXRLZXkwMTIzNDU2Nzg=}
@@ -284,11 +285,26 @@ services:
     command: ["sh", "-c", "/app/n9e"]
     volumes:
       - ./nightingale/config.toml:/app/etc/config.toml:ro
+    extra_hosts:
+      - "auth.localhost:host-gateway"
     depends_on:
       nightingale-mysql:
         condition: service_healthy
       nightingale-redis:
         condition: service_healthy
+    networks:
+      - tools_net
+
+  nightingale-sso-bridge:
+    image: python:3.12-slim
+    container_name: nightingale-sso-bridge
+    restart: unless-stopped
+    command: ["python", "/app/nightingale/sso_bridge.py"]
+    volumes:
+      - ./nightingale/sso_bridge.py:/app/nightingale/sso_bridge.py:ro
+    depends_on:
+      nightingale:
+        condition: service_started
     networks:
       - tools_net
 
@@ -335,6 +351,20 @@ services:
       - redis
       - mongo-express
 
+  oauth2-proxy-nacos:
+    <<: *oauth2-proxy-common
+    container_name: oauth2-proxy-nacos
+    command:
+      - --config=/etc/oauth2-proxy/oauth2-proxy.cfg
+      - --http-address=0.0.0.0:4183
+      - --redirect-url=${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}/oauth2/callback
+      - --upstream=http://nacos:8080/
+      - --cookie-name=_oauth2_proxy_nacos
+    depends_on:
+      - keycloak
+      - redis
+      - nacos
+
   gateway:
     image: ${GATEWAY_IMAGE}
     container_name: gateway
@@ -344,15 +374,18 @@ services:
       - "80:80"
     volumes:
       - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./gateway/nightingale-callback.html:/usr/share/nginx/html/nightingale-callback.html:ro
     depends_on:
       - keycloak
       - portainer
       - kafka-ui
       - nacos
       - nightingale
+      - nightingale-sso-bridge
       - oauth2-proxy-redisinsight
       - oauth2-proxy-phpmyadmin
       - oauth2-proxy-mongo-express
+      - oauth2-proxy-nacos
     networks:
       - tools_net
 

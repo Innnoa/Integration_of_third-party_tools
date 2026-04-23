@@ -308,20 +308,18 @@ class ProbeAuthTest(unittest.TestCase):
 
         self.assertEqual(result, ProbeResult.ok("检测到 OIDC 跳转"))
 
-    def test_probe_auth_nacos_accepts_oidc_redirect(self) -> None:
+    def test_probe_auth_nacos_accepts_oauth2_proxy_redirect(self) -> None:
         unit = _unit(
             unit_id="nacos",
             entry_url="http://nacos.localhost",
-            auth_mode="oidc_redirect",
-            auth_path="openid-connect/auth",
+            auth_mode="oauth2_proxy_redirect",
+            auth_path="/oauth2/",
         )
         client = FakeProbeClient(
             {
                 "http://nacos.localhost": HttpResponse(
                     status=302,
-                    headers={
-                        "Location": "http://auth.localhost/realms/infra/protocol/openid-connect/auth?client_id=nacos"
-                    },
+                    headers={"Location": "/oauth2/start?rd=%2F"},
                     body="",
                 )
             }
@@ -330,6 +328,40 @@ class ProbeAuthTest(unittest.TestCase):
         result = probe_auth(unit, client, harbor_installed=True)
 
         self.assertEqual(result.level, "ok")
+
+    def test_probe_auth_nacos_accepts_direct_keycloak_redirect_from_proxy(self) -> None:
+        unit = _unit(
+            unit_id="nacos",
+            entry_url="http://nacos.localhost",
+            auth_mode="oauth2_proxy_redirect",
+            auth_path="/oauth2/",
+        )
+        client = FakeProbeClient(
+            {
+                "http://nacos.localhost": HttpResponse(
+                    status=302,
+                    headers={
+                        "Location": (
+                            "http://auth.localhost/realms/infra/protocol/openid-connect/auth"
+                            "?client_id=oauth2-proxy"
+                            "&redirect_uri=http%3A%2F%2Fnacos.localhost%2Foauth2%2Fcallback"
+                        )
+                    },
+                    body="",
+                ),
+            }
+        )
+
+        result = probe_auth(unit, client, harbor_installed=True)
+
+        self.assertEqual(client.calls, [("http://nacos.localhost", False)])
+        self.assertEqual(result.level, "ok")
+        location = client.responses["http://nacos.localhost"].headers.get("Location", "")
+        self.assertIn("client_id=oauth2-proxy", location)
+        self.assertIn(
+            "redirect_uri=http%3A%2F%2Fnacos.localhost%2Foauth2%2Fcallback",
+            location,
+        )
 
     def test_probe_auth_nightingale_accepts_oidc_redirect(self) -> None:
         unit = _unit(
@@ -340,12 +372,10 @@ class ProbeAuthTest(unittest.TestCase):
         )
         client = FakeProbeClient(
             {
-                "http://nightingale.localhost": HttpResponse(
-                    status=302,
-                    headers={
-                        "Location": "http://auth.localhost/realms/infra/protocol/openid-connect/auth?client_id=nightingale"
-                    },
-                    body="",
+                "http://nightingale.localhost/api/n9e/auth/redirect?redirect=%2F": HttpResponse(
+                    status=200,
+                    headers={},
+                    body='{"dat":"http://auth.localhost/realms/infra/protocol/openid-connect/auth?client_id=nightingale&redirect_uri=http%3A%2F%2Fnightingale.localhost%2Fcallback","err":""}',
                 )
             }
         )
@@ -403,22 +433,22 @@ class ProbeAuthTest(unittest.TestCase):
 
 
 class Task3OidcConfigContractTest(unittest.TestCase):
-    def test_nacos_oidc_config_is_local_dev_ready(self) -> None:
+    def test_nacos_console_config_is_local_dev_ready(self) -> None:
         nacos_config = _parse_properties("nacos/application.properties")
 
-        self.assertEqual(nacos_config["nacos.core.auth.enabled"], "true")
-        self.assertEqual(nacos_config["nacos.core.auth.system.type"], "oidc")
+        self.assertEqual(nacos_config["nacos.core.auth.enabled"], "false")
+        self.assertEqual(nacos_config["nacos.core.auth.console.enabled"], "false")
+        self.assertEqual(nacos_config["nacos.console.ui.enabled"], "true")
+        self.assertNotIn("nacos.core.auth.system.type", nacos_config)
         self.assertEqual(nacos_config["nacos.core.auth.server.identity.key"], "serverIdentity")
         self.assertEqual(nacos_config["nacos.core.auth.server.identity.value"], "security")
         self.assertEqual(
             nacos_config["nacos.core.auth.plugin.nacos.token.secret.key"],
             "VGhpc0lzTXlDdXN0b21TZWNyZXRLZXkwMTIzNDU2Nzg=",
         )
-        self.assertEqual(nacos_config["nacos.core.auth.plugin.oidc.issuer-uri"], "http://auth.localhost/realms/infra")
-        self.assertEqual(nacos_config["nacos.core.auth.plugin.oidc.client-id"], "nacos")
-        self.assertEqual(nacos_config["nacos.core.auth.plugin.oidc.client-secret"], "nacos-client-secret")
-        self.assertEqual(nacos_config["nacos.core.auth.plugin.oidc.scope"], "openid profile email")
-        self.assertEqual(nacos_config["nacos.core.auth.plugin.oidc.username-claim"], "preferred_username")
+        self.assertNotIn("nacos.core.auth.plugin.oidc.client-id", nacos_config)
+        self.assertNotIn("nacos.core.auth.plugin.oidc.client-secret", nacos_config)
+        self.assertNotIn("nacos.core.auth.plugin.oidc.issuer-uri", nacos_config)
 
     def test_nightingale_oidc_config_is_local_dev_ready(self) -> None:
         config = _load_toml("nightingale/config.toml")
@@ -457,7 +487,7 @@ class Task3OidcConfigContractTest(unittest.TestCase):
             f'{env_values["PUBLIC_SCHEME"]}://{env_values["KEYCLOAK_PUBLIC_HOST"]}/realms/{env_values["KEYCLOAK_REALM"]}'
         )
         expected_auth_endpoint = f"{expected_issuer}/protocol/openid-connect/auth"
-        self.assertEqual(nacos_config["nacos.core.auth.plugin.oidc.issuer-uri"], expected_issuer)
+        self.assertEqual(nacos_config["nacos.core.auth.enabled"], "false")
         self.assertEqual(nightingale_config["Auth"]["OIDC"]["SsoAddr"], expected_auth_endpoint)
         self.assertEqual(
             nightingale_config["Auth"]["OIDC"]["SsoLogoutAddr"],
@@ -467,32 +497,32 @@ class Task3OidcConfigContractTest(unittest.TestCase):
             'KEYCLOAK_PUBLIC_ISSUER="${PUBLIC_SCHEME}://${KEYCLOAK_PUBLIC_HOST}/realms/${KEYCLOAK_REALM}"',
             bootstrap,
         )
-        self.assertEqual(nacos_config["nacos.core.auth.plugin.oidc.client-id"], "nacos")
         self.assertEqual(nightingale_config["Auth"]["OIDC"]["ClientId"], "nightingale")
-        self.assertIn("nacos", bootstrap_clients)
+        self.assertIn("${OAUTH2_PROXY_CLIENT_ID}", bootstrap_clients)
         self.assertIn("nightingale", bootstrap_clients)
 
-    def test_keycloak_bootstrap_refreshes_nacos_and_nightingale_clients(self) -> None:
+    def test_keycloak_bootstrap_refreshes_oauth2_proxy_and_nightingale_clients(self) -> None:
         bootstrap = pathlib.Path("scripts/bootstrap-keycloak.sh").read_text(encoding="utf-8")
         bootstrap_clients = _parse_bootstrap_client_calls(bootstrap)
         function_body = _extract_shell_function(bootstrap, "create_or_update_client")
 
         self.assertEqual(
-            bootstrap_clients["nacos"],
+            bootstrap_clients["${OAUTH2_PROXY_CLIENT_ID}"],
             {
-                "secret": "${NACOS_CLIENT_SECRET:-nacos-client-secret}",
-                "redirect_uris": "[\\\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}/*\\\"]",
-                "web_origins": "[\\\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}\\\"]",
+                "secret": "${OAUTH2_PROXY_CLIENT_SECRET}",
+                "redirect_uris": "[\\\"${PUBLIC_SCHEME}://${REDISINSIGHT_PUBLIC_HOST}/oauth2/callback\\\",\\\"${PUBLIC_SCHEME}://${PHPMYADMIN_PUBLIC_HOST}/oauth2/callback\\\",\\\"${PUBLIC_SCHEME}://${MONGO_EXPRESS_PUBLIC_HOST}/oauth2/callback\\\",\\\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}/oauth2/callback\\\"]",
+                "web_origins": "[\\\"${PUBLIC_SCHEME}://${REDISINSIGHT_PUBLIC_HOST}\\\",\\\"${PUBLIC_SCHEME}://${PHPMYADMIN_PUBLIC_HOST}\\\",\\\"${PUBLIC_SCHEME}://${MONGO_EXPRESS_PUBLIC_HOST}\\\",\\\"${PUBLIC_SCHEME}://${NACOS_PUBLIC_HOST}\\\"]",
             },
         )
         self.assertEqual(
             bootstrap_clients["nightingale"],
             {
-                "secret": "${NIGHTINGALE_CLIENT_SECRET:-nightingale-client-secret}",
+                "secret": "${NIGHTINGALE_CLIENT_SECRET}",
                 "redirect_uris": "[\\\"${PUBLIC_SCHEME}://${NIGHTINGALE_PUBLIC_HOST}/callback\\\"]",
                 "web_origins": "[\\\"${PUBLIC_SCHEME}://${NIGHTINGALE_PUBLIC_HOST}\\\"]",
             },
         )
+        self.assertNotIn("nacos", bootstrap_clients)
         self.assertRegex(
             function_body,
             r'(?s)update "clients/\$\{client_uuid\}".*?[\'"]attributes\."post\.logout\.redirect\.uris"="\+"[\'"].*?secret="\$\{secret\}"',

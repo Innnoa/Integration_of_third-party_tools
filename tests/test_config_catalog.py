@@ -64,6 +64,10 @@ class ConfigCatalogTest(unittest.TestCase):
 
         self.assertEqual(units["keycloak"].entry_url, "http://auth.localhost")
         self.assertEqual(
+            units["keycloak"].open_url,
+            "http://auth.localhost/realms/infra/account/",
+        )
+        self.assertEqual(
             units["keycloak"].start_services,
             ("keycloak-postgres", "keycloak"),
         )
@@ -87,6 +91,7 @@ class ConfigCatalogTest(unittest.TestCase):
             units = {unit.unit_id: unit for unit in build_units(settings)}
 
         self.assertEqual(units["portainer"].entry_url, "http://portainer.localhost")
+        self.assertIsNone(units["portainer"].open_url)
         self.assertEqual(units["kafka_ui"].entry_url, "http://kafka.localhost")
         self.assertEqual(units["redisinsight"].entry_url, "http://redis.localhost")
         self.assertEqual(units["phpmyadmin"].entry_url, "http://pma.localhost")
@@ -153,10 +158,15 @@ class ConfigCatalogTest(unittest.TestCase):
         self.assertEqual(settings.nightingale_public_host, "nightingale.custom.local")
         self.assertEqual(units["nacos"].entry_url, "http://nacos.custom.local")
         self.assertEqual(units["nightingale"].entry_url, "http://nightingale.custom.local")
+        self.assertIsNone(units["nacos"].open_url)
+        self.assertEqual(
+            units["nightingale"].open_url,
+            "http://nightingale.custom.local/login?redirect=%2F",
+        )
         self.assertEqual(units["nacos"].compose_scope, "main")
         self.assertEqual(units["nightingale"].compose_scope, "main")
-        self.assertEqual(units["nacos"].start_services, ("nacos", "nacos-mysql"))
-        self.assertEqual(units["nacos"].stop_services, ("nacos", "nacos-mysql"))
+        self.assertEqual(units["nacos"].start_services, ("nacos", "nacos-mysql", "oauth2-proxy-nacos"))
+        self.assertEqual(units["nacos"].stop_services, ("nacos", "nacos-mysql", "oauth2-proxy-nacos"))
         self.assertEqual(
             units["nightingale"].start_services,
             ("nightingale", "nightingale-mysql", "nightingale-redis"),
@@ -165,9 +175,9 @@ class ConfigCatalogTest(unittest.TestCase):
             units["nightingale"].stop_services,
             ("nightingale", "nightingale-mysql", "nightingale-redis"),
         )
-        self.assertEqual(units["nacos"].auth_mode, "oidc_redirect")
+        self.assertEqual(units["nacos"].auth_mode, "oauth2_proxy_redirect")
         self.assertEqual(units["nightingale"].auth_mode, "oidc_redirect")
-        self.assertEqual(units["nacos"].auth_path, "openid-connect/auth")
+        self.assertEqual(units["nacos"].auth_path, "/oauth2/")
         self.assertEqual(units["nightingale"].auth_path, "openid-connect/auth")
         self.assertEqual(units["nacos"].auth_expectation, "required")
         self.assertEqual(units["nightingale"].auth_expectation, "required")

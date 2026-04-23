@@ -1,9 +1,7 @@
 import json
 import subprocess
 import tempfile
-import threading
 import unittest
-from http.client import HTTPConnection
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,7 +9,7 @@ from business_panel.catalog import UnitDefinition
 from business_panel.config import PanelSettings
 from business_panel.control import PanelBusyError
 from business_panel.models import ProbeResult
-from business_panel.server import make_server
+from business_panel.server import dispatch_request
 from business_panel.status_service import PanelApplication, _run_compose_ps
 
 
@@ -53,15 +51,6 @@ class FakeApp:
 class ServerTest(unittest.TestCase):
     def setUp(self) -> None:
         self.app = FakeApp()
-        self.server = make_server("127.0.0.1", 0, self.app)
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
-        self.port = self.server.server_address[1]
-
-    def tearDown(self) -> None:
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=2)
 
     def _request(
         self,
@@ -71,11 +60,15 @@ class ServerTest(unittest.TestCase):
         body: str | None = None,
         headers: dict[str, str] | None = None,
     ) -> tuple[int, dict[str, str], str]:
-        conn = HTTPConnection("127.0.0.1", self.port)
-        conn.request(method, path, body=body, headers=headers or {})
-        response = conn.getresponse()
-        payload = response.read().decode("utf-8")
-        return response.status, dict(response.getheaders()), payload
+        response = dispatch_request(
+            self.app,
+            method=method,
+            path=path,
+            headers=headers or {},
+            body=(body or "").encode("utf-8"),
+        )
+        payload = response.body.decode("utf-8")
+        return response.status, dict(response.headers), payload
 
     def test_status_endpoint_returns_json(self) -> None:
         status, _, body = self._request("GET", "/api/status")

@@ -72,26 +72,37 @@
 
 ### 0. 一键安装
 
-如果你希望按当前项目约定直接完成预检、补 `.env`、启动主栈、准备 Harbor、初始化 Keycloak，并启动业务面板，可以直接运行：
+如果你希望按当前项目约定直接完成预检、补 `.env`、维护当前 Linux 主机的 `/etc/hosts`、启动主栈、初始化 Keycloak、配置 Portainer OIDC，并输出安装后验收摘要，可以直接运行：
 
 ```bash
-./install.sh
+sudo ./install.sh --base-domain example.internal
 ```
 
 常用参数：
 
 ```bash
-./install.sh --repair
-./install.sh --skip-panel
+sudo ./install.sh --base-domain example.internal --repair
+sudo ./install.sh --base-domain example.internal --skip-panel
+sudo ./install.sh --base-domain example.internal --public-ip 192.168.50.10
+sudo ./install.sh --base-domain example.internal --with-harbor
 ```
 
 说明：
 
+- `--base-domain` 是一键安装主路径的必填参数，脚本会自动派生 `auth.<domain>`、`portainer.<domain>`、`nacos.<domain>` 等入口域名
+- 默认会写入当前 Linux 主机的 `/etc/hosts`；如果你只想先演练流程，可以临时指定 `INSTALL_HOSTS_FILE=/path/to/hosts`
+- 默认会自动探测本机对外 IP，并回写 `PUBLIC_HOST` 与 `KAFKA_HOST_BOOTSTRAP_SERVER`；如需固定值可传 `--public-ip`
 - `--repair` 是对同一安装流程的重跑/修复模式，不是单独的安装路径
+- 安装脚本默认不安装 Harbor；只有显式传入 `--with-harbor` 时，才会执行 Harbor prepare / install
+- `--skip-harbor` 仍然保留，用于兼容旧调用方式
+- 安装脚本会先做预检和依赖检查；若发现缺少受支持依赖，会尝试通过当前发行版的包管理器自动安装
 - 安装脚本会在 `.env` 缺少常用密码或 secret 占位值时自动生成安全随机值
-- 安装脚本不会自动修改 Windows 宿主机的 `hosts` 文件，需要你手工添加
-- 安装脚本最终提示里给出的主机名与 `hosts` 指引，会按当前 `.env` 中的 `*_PUBLIC_HOST` 值输出；未配置时才回退到默认示例
-- Harbor 为必需组件；默认要求 `harbor/installer/` 目录和其中的安装脚本已经存在
+- 安装主栈前会按 `.env` 自动渲染 `nightingale/config.toml`
+- 对 `main_stack`、`bootstrap`、`configure`、`verify` 等关键阶段会做有限次重试
+- 安装完成后会自动尝试校验主入口；命中 Keycloak / oauth2-proxy 跳转也会视为 ready
+- 最终输出会包含 `overall=success|degraded|failed` 和每个阶段的结果摘要
+- 脚本只会维护当前 Linux 主机的 `/etc/hosts`，不会自动修改 Windows 宿主机的 `hosts` 文件；如果你从 Windows 浏览器访问，仍需要手工同步
+- 如果要安装 Harbor，才需要 `harbor/installer/` 目录和其中的安装脚本已经存在
 
 ### 1. 复制环境文件
 
@@ -352,10 +363,12 @@ http://PUBLIC_HOST:8080/admin
   - `http://redis.localhost/oauth2/callback`
   - `http://pma.localhost/oauth2/callback`
   - `http://mongo.localhost/oauth2/callback`
+  - `http://nacos.localhost/oauth2/callback`
 - Valid post logout redirect URIs:
   - `http://redis.localhost/*`
   - `http://pma.localhost/*`
   - `http://mongo.localhost/*`
+  - `http://nacos.localhost/*`
 - Web origins:
   - `+`
 - Default client scopes:
@@ -387,7 +400,8 @@ http://PUBLIC_HOST:8080/admin
 
 ### Portainer
 
-先用本地管理员账号登录 Portainer，然后在：
+`install.sh --base-domain ...` 会在首次安装时自动通过 Portainer API 写入这组 OIDC 配置。  
+如果你是手工部署或想核对配置，可以在 Portainer 后台查看：
 
 - `Settings -> Authentication -> OAuth`
 
@@ -405,6 +419,17 @@ http://PUBLIC_HOST:8080/admin
 - Auto create users: `ON`
 
 建议第一次不要隐藏本地登录，等 OIDC 跑通后再收口。
+
+### Nightingale
+
+夜莺继续使用原生 OIDC。仓库里的 `nightingale/config.toml` 不是手工长期维护文件，`scripts/up-main.sh` 会在启动前根据 `.env` 重新渲染，关键输入包括：
+
+- `KEYCLOAK_PUBLIC_HOST`
+- `KEYCLOAK_REALM`
+- `NIGHTINGALE_PUBLIC_HOST`
+- `NIGHTINGALE_CLIENT_SECRET`
+- `NIGHTINGALE_DB_PASSWORD`
+- `NIGHTINGALE_REDIS_PASSWORD`
 
 ### KafkaUI
 
@@ -443,9 +468,12 @@ PUBLIC_HOST:9092
 - RedisInsight: `http://PUBLIC_HOST:4180`
 - phpMyAdmin: `http://PUBLIC_HOST:4181`
 - mongo-express: `http://PUBLIC_HOST:4182`
+- Nacos: `http://nacos.localhost`
 
 第一次访问会跳转到 Keycloak。  
 后续因为已经有 Keycloak 会话，一般不需要重复输密码。
+
+Nacos 现在通过 `gateway -> oauth2-proxy-nacos -> Nacos Console` 进入，不再依赖 Nacos 原生 OIDC 登录页。
 
 #### phpMyAdmin 自动登录说明
 

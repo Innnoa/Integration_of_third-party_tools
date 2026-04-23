@@ -18,6 +18,7 @@ class UnitDefinition:
     auth_mode: str
     auth_path: str
     auth_expectation: str
+    open_url: str | None = None
 
 
 def _public_url(scheme: str, host: str, port: int) -> str:
@@ -38,6 +39,10 @@ def build_units(settings: PanelSettings) -> tuple[UnitDefinition, ...]:
             auth_mode="metadata",
             auth_path=f"/realms/{settings.keycloak_realm}/.well-known/openid-configuration",
             auth_expectation="required",
+            open_url=(
+                f"{settings.public_scheme}://{settings.keycloak_public_host}"
+                f"/realms/{settings.keycloak_realm}/account/"
+            ),
         ),
         UnitDefinition(
             unit_id="portainer",
@@ -110,11 +115,11 @@ def build_units(settings: PanelSettings) -> tuple[UnitDefinition, ...]:
             description="Configuration and service discovery platform.",
             entry_url=f"{settings.public_scheme}://{settings.nacos_public_host}",
             compose_scope="main",
-            start_services=("nacos", "nacos-mysql"),
-            stop_services=("nacos", "nacos-mysql"),
+            start_services=("nacos", "nacos-mysql", "oauth2-proxy-nacos"),
+            stop_services=("nacos", "nacos-mysql", "oauth2-proxy-nacos"),
             shared_dependencies=(),
-            auth_mode="oidc_redirect",
-            auth_path="openid-connect/auth",
+            auth_mode="oauth2_proxy_redirect",
+            auth_path="/oauth2/",
             auth_expectation="required",
         ),
         UnitDefinition(
@@ -129,6 +134,10 @@ def build_units(settings: PanelSettings) -> tuple[UnitDefinition, ...]:
             auth_mode="oidc_redirect",
             auth_path="openid-connect/auth",
             auth_expectation="required",
+            open_url=(
+                f"{settings.public_scheme}://{settings.nightingale_public_host}"
+                "/login?redirect=%2F"
+            ),
         ),
         UnitDefinition(
             unit_id="harbor",

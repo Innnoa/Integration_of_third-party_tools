@@ -2,8 +2,12 @@
 Host = "0.0.0.0"
 Port = 17000
 
+[HTTP.JWTAuth]
+AccessExpired = 1500
+RefreshExpired = 10080
+RedisKeyPrefix = "/jwt/"
+
 [DB]
-# Follow upstream Nightingale config contract: DBType + DSN.
 DBType = "mysql"
 DSN = "nightingale:nightingale-dev-password@tcp(nightingale-mysql:3306)/nightingale?charset=utf8mb4&parseTime=True&loc=Local"
 

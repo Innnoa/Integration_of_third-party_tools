@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import quote
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
@@ -86,6 +87,11 @@ def probe_auth(
         return ProbeResult.fail("认证元数据异常")
 
     if unit.auth_mode == "oidc_redirect":
+        if unit.unit_id == "nightingale":
+            response = client.fetch(f"{unit.entry_url}/api/n9e/auth/redirect?redirect={quote('/', safe='')}")
+            if "openid-connect/auth" in response.body and "client_id=nightingale" in response.body:
+                return ProbeResult.ok("检测到 OIDC 跳转")
+            return ProbeResult.fail("未检测到 OIDC 跳转")
         response = client.fetch(unit.entry_url)
         location = _header_value(response.headers, "Location")
         if unit.auth_path in location or "/oauth2/authorization/" in location:

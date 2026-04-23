@@ -177,9 +177,29 @@ class StatusServiceTest(unittest.TestCase):
         self.assertIn("container", unit)
         self.assertIn("endpoint", unit)
         self.assertIn("auth", unit)
+        self.assertEqual(unit["open_url"], "http://127.0.0.1:8080")
         self.assertSetEqual(set(unit["container"].keys()), {"level", "summary"})
         self.assertSetEqual(set(unit["endpoint"].keys()), {"level", "summary"})
         self.assertSetEqual(set(unit["auth"].keys()), {"level", "summary"})
+
+    def test_unit_summary_prefers_open_url_when_present(self) -> None:
+        summary = summarize_unit(
+            UnitSnapshot(
+                unit_id="keycloak",
+                display_name="Keycloak",
+                description="统一认证中心",
+                entry_url="http://auth.localhost",
+                auth_expectation="required",
+                container=ProbeResult.ok("容器运行"),
+                endpoint=ProbeResult.ok("入口可达"),
+                auth=ProbeResult.ok("OIDC 元数据正常"),
+                available_actions=("start", "stop", "restart"),
+                open_url="http://auth.localhost/realms/infra/account/",
+            )
+        )
+
+        self.assertEqual(summary.open_url, "http://auth.localhost/realms/infra/account/")
+        self.assertEqual(summary.to_dict()["open_url"], "http://auth.localhost/realms/infra/account/")
 
     def test_refreshed_at_is_parseable_utc_iso_timestamp(self) -> None:
         payload = summarize_panel(
@@ -279,6 +299,7 @@ class StatusServiceTest(unittest.TestCase):
                 display_name="Keycloak",
                 description="统一认证中心",
                 entry_url="http://127.0.0.1:8080",
+                open_url="http://127.0.0.1:8080",
                 auth_expectation="required",
                 container=ProbeResult.ok("容器运行"),
                 endpoint=ProbeResult.ok("入口可达"),

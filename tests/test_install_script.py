@@ -5,11 +5,34 @@ import tempfile
 import unittest
 from pathlib import Path
 
+os.environ.setdefault("INSTALL_REQUIRED_COMMANDS", "python3")
+
 
 def stage_install_scripts(root: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     shutil.copy2(repo_root / "install.sh", root / "install.sh")
     shutil.copy2(repo_root / "scripts" / "install-lib.sh", root / "scripts" / "install-lib.sh")
+    write_executable(
+        root / "scripts" / "install_helper.py",
+        """#!/usr/bin/env python3
+import pathlib
+import sys
+
+argv = sys.argv[1:]
+if argv[0] == "detect-public-ip":
+    print("127.0.0.1")
+elif argv[0] == "sync-hosts":
+    pathlib.Path(argv[argv.index("--hosts-file") + 1]).write_text("managed-hosts\\n", encoding="utf-8")
+elif argv[0] == "configure-portainer":
+    print("configured")
+elif argv[0] == "verify-install":
+    print('{"overall":"ready","checks":[]}')
+elif argv[0] == "render-nightingale-config":
+    pathlib.Path(argv[argv.index("--output") + 1]).write_text("[generated]\\n", encoding="utf-8")
+else:
+    raise SystemExit(argv)
+""",
+    )
 
 
 def stage_successful_runtime_scripts(root: Path, panel_content: str = "#!/usr/bin/env bash\nexit 0\n") -> None:
@@ -41,6 +64,187 @@ def parse_env(text: str) -> dict[str, str]:
 
 
 class InstallScriptTest(unittest.TestCase):
+    def test_install_auto_installs_missing_dependencies_with_supported_package_manager(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
+
+            fakebin = root / "fakebin"
+            fakebin.mkdir()
+            install_log = root / "deps.log"
+            write_executable(
+                fakebin / "sudo",
+                "#!/usr/bin/env bash\n"
+                "echo sudo:$* >> \"$INSTALL_LOG\"\n"
+                "\"$@\"\n",
+            )
+            write_executable(
+                fakebin / "apt-get",
+                "#!/usr/bin/env bash\n"
+                "echo apt-get:$* >> \"$INSTALL_LOG\"\n"
+                "if [ \"$1\" = \"install\" ]; then\n"
+                "  : > \"$INSTALL_FAKEBIN/fakecmd\"\n"
+                "  chmod +x \"$INSTALL_FAKEBIN/fakecmd\"\n"
+                "fi\n",
+            )
+            result = subprocess.run(
+                ["bash", "install.sh", "--skip-panel", "--skip-harbor"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "PATH": f"{fakebin}:{os.environ['PATH']}",
+                    "INSTALL_LOG": str(install_log),
+                    "INSTALL_FAKEBIN": str(fakebin),
+                    "INSTALL_REQUIRED_COMMANDS": "fakecmd",
+                    "INSTALL_PACKAGE_MANAGER": "apt-get",
+                },
+            )
+            log_text = install_log.read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("apt-get:update", log_text)
+        self.assertIn("apt-get:install -y", log_text)
+
+    def test_install_retries_main_stack_before_failing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
+            log_file = root / "up-main.log"
+            write_executable(root / "scripts" / "init-network.sh", "#!/usr/bin/env bash\nexit 0\n")
+            write_executable(
+                root / "scripts" / "up-main.sh",
+                "#!/usr/bin/env bash\n"
+                "count=0\n"
+                "if [ -f \"$INSTALL_LOG\" ]; then count=$(wc -l < \"$INSTALL_LOG\"); fi\n"
+                "count=$((count+1))\n"
+                "printf 'up-main\\n' >> \"$INSTALL_LOG\"\n"
+                "if [ \"$count\" -lt 2 ]; then exit 23; fi\n"
+                "exit 0\n",
+            )
+            for name in ("repair-mariadb-phpmyadmin-user.sh", "bootstrap-keycloak.sh"):
+                write_executable(root / "scripts" / name, "#!/usr/bin/env bash\nexit 0\n")
+            result = subprocess.run(
+                ["bash", "install.sh", "--skip-panel", "--skip-harbor"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "INSTALL_LOG": str(log_file)},
+            )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("RETRY: main_stack", result.stdout + result.stderr)
+
+    def test_install_prints_overall_and_stage_results(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
+            result = subprocess.run(
+                ["bash", "install.sh", "--skip-panel", "--skip-harbor"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("Result:", result.stdout)
+        self.assertIn("overall=success", result.stdout)
+        self.assertIn("preflight=ok", result.stdout)
+        self.assertIn("verify=ok", result.stdout)
+
+    def test_install_requires_base_domain_for_default_flow(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            write_executable(
+                root / "scripts" / "install_helper.py",
+                "#!/usr/bin/env python3\nprint('127.0.0.1')\n",
+            )
+            (root / ".env.example").write_text(
+                "PUBLIC_SCHEME=http\nPUBLIC_HOST=REPLACE_ME_PUBLIC_HOST\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["bash", "install.sh"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--base-domain", result.stderr + result.stdout)
+
+    def test_install_base_domain_derives_public_hosts_and_public_ip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            hosts_file = root / "hosts"
+            write_executable(
+                root / "scripts" / "install_helper.py",
+                """#!/usr/bin/env python3
+import pathlib
+import sys
+
+argv = sys.argv[1:]
+if argv[0] == "detect-public-ip":
+    print("192.168.50.10")
+elif argv[0] == "sync-hosts":
+    target = pathlib.Path(argv[argv.index("--hosts-file") + 1])
+    target.write_text("managed-hosts\\n", encoding="utf-8")
+elif argv[0] == "configure-portainer":
+    print("configure-portainer:ok")
+elif argv[0] == "verify-install":
+    print('{"overall":"ready","checks":[]}')
+else:
+    raise SystemExit(f"unexpected args: {argv}")
+""",
+            )
+            (root / ".env.example").write_text(
+                "PUBLIC_SCHEME=http\n"
+                "PUBLIC_HOST=REPLACE_ME_PUBLIC_HOST\n"
+                "BROWSER_HOST=localhost\n"
+                "KAFKA_HOST_BOOTSTRAP_SERVER=REPLACE_ME_PUBLIC_HOST:9092\n"
+                "KEYCLOAK_REALM=infra\n"
+                "PORTAINER_CLIENT_ID=portainer\n"
+                "PORTAINER_CLIENT_SECRET=portainer-secret\n"
+                "PORTAINER_ADMIN_USER=admin\n"
+                "PORTAINER_ADMIN_PASSWORD=StrongPassword_123\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["bash", "install.sh", "--base-domain", "dev.example", "--skip-panel"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "INSTALL_HOSTS_FILE": str(hosts_file)},
+            )
+
+            env_map = parse_env((root / ".env").read_text(encoding="utf-8"))
+            hosts_text = hosts_file.read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(env_map["PUBLIC_HOST"], "192.168.50.10")
+        self.assertEqual(env_map["KAFKA_HOST_BOOTSTRAP_SERVER"], "192.168.50.10:9092")
+        self.assertEqual(env_map["KEYCLOAK_PUBLIC_HOST"], "auth.dev.example")
+        self.assertEqual(env_map["PORTAINER_PUBLIC_HOST"], "portainer.dev.example")
+        self.assertEqual(env_map["NACOS_PUBLIC_HOST"], "nacos.dev.example")
+        self.assertEqual(env_map["NIGHTINGALE_PUBLIC_HOST"], "nightingale.dev.example")
+        self.assertEqual(env_map["BROWSER_HOST"], "localhost")
+        self.assertEqual(hosts_text, "managed-hosts\n")
+
     def test_install_summary_uses_current_env_hosts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -68,7 +272,7 @@ class InstallScriptTest(unittest.TestCase):
                 encoding="utf-8",
             )
             result = subprocess.run(
-                ["bash", "install.sh"],
+                ["bash", "install.sh", "--with-harbor"],
                 cwd=root,
                 capture_output=True,
                 text=True,
@@ -97,8 +301,6 @@ class InstallScriptTest(unittest.TestCase):
             (root / "scripts").mkdir()
             stage_install_scripts(root)
             stage_successful_runtime_scripts(root)
-            (root / "harbor" / "installer").mkdir(parents=True)
-            write_executable(root / "harbor" / "installer" / "install.sh", "#!/usr/bin/env bash\nexit 0\n")
             (root / ".env.example").write_text("PUBLIC_HOST=public.example\n", encoding="utf-8")
             result = subprocess.run(
                 ["bash", "install.sh"],
@@ -115,7 +317,6 @@ class InstallScriptTest(unittest.TestCase):
             "http://redis.localhost",
             "http://pma.localhost",
             "http://mongo.localhost",
-            "http://harbor.localhost",
             "http://127.0.0.1:8090",
             "PUBLIC_HOST:9092",
             "public.example:9092",
@@ -123,9 +324,10 @@ class InstallScriptTest(unittest.TestCase):
             "Windows hosts",
             "auth.localhost",
             "portainer.localhost",
-            "harbor.localhost",
         ):
             self.assertIn(expected, result.stdout)
+        self.assertNotIn("http://harbor.localhost", result.stdout)
+        self.assertNotIn("harbor.localhost", result.stdout)
 
     def test_install_summary_omits_panel_when_skip_panel_is_set(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -133,8 +335,6 @@ class InstallScriptTest(unittest.TestCase):
             (root / "scripts").mkdir()
             stage_install_scripts(root)
             stage_successful_runtime_scripts(root)
-            (root / "harbor" / "installer").mkdir(parents=True)
-            write_executable(root / "harbor" / "installer" / "install.sh", "#!/usr/bin/env bash\nexit 0\n")
             (root / ".env.example").write_text("PUBLIC_HOST=public.example\n", encoding="utf-8")
             result = subprocess.run(
                 ["bash", "install.sh", "--skip-panel"],
@@ -147,7 +347,7 @@ class InstallScriptTest(unittest.TestCase):
         self.assertNotIn("http://127.0.0.1:8090", result.stdout)
         self.assertNotIn("verify the panel", result.stdout)
         self.assertNotIn("panel plus Kafka", result.stdout)
-        self.assertIn("http://harbor.localhost", result.stdout)
+        self.assertNotIn("http://harbor.localhost", result.stdout)
         self.assertIn("PUBLIC_HOST:9092", result.stdout)
 
     def test_install_summary_omits_harbor_when_skip_harbor_is_set(self) -> None:
@@ -170,14 +370,14 @@ class InstallScriptTest(unittest.TestCase):
         self.assertIn("http://127.0.0.1:8090", result.stdout)
         self.assertIn("PUBLIC_HOST:9092", result.stdout)
 
-    def test_install_fails_when_harbor_installer_missing(self) -> None:
+    def test_install_with_harbor_fails_when_harbor_installer_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "scripts").mkdir()
             stage_install_scripts(root)
             (root / ".env.example").write_text("PUBLIC_SCHEME=http\n", encoding="utf-8")
             result = subprocess.run(
-                ["bash", "install.sh"],
+                ["bash", "install.sh", "--with-harbor"],
                 cwd=root,
                 capture_output=True,
                 text=True,
@@ -192,8 +392,6 @@ class InstallScriptTest(unittest.TestCase):
             (root / "scripts").mkdir()
             stage_install_scripts(root)
             stage_successful_runtime_scripts(root)
-            (root / "harbor" / "installer").mkdir(parents=True)
-            write_executable(root / "harbor" / "installer" / "install.sh", "#!/usr/bin/env bash\nexit 0\n")
             (root / ".env.example").write_text("PUBLIC_HOST=example.local\n", encoding="utf-8")
             result = subprocess.run(
                 ["bash", "install.sh"],
@@ -250,11 +448,11 @@ class InstallScriptTest(unittest.TestCase):
             lines,
             ["init-network.sh", "up-main.sh", "repair-mariadb-phpmyadmin-user.sh", "bootstrap-keycloak.sh", "panel.sh"],
         )
-        self.assertIn("[5/9] phpmyadmin_user_repair", result.stdout)
-        self.assertIn("OK: phpmyadmin_user_repair", result.stdout)
-        self.assertIn("[6/9] harbor_prepare", result.stdout)
+        self.assertIn("[6/12] repair", result.stdout)
+        self.assertIn("OK: repair", result.stdout)
+        self.assertIn("[7/12] harbor_prepare", result.stdout)
         self.assertIn("SKIP: harbor_prepare", result.stdout)
-        self.assertIn("[7/9] harbor_install", result.stdout)
+        self.assertIn("[8/12] harbor_install", result.stdout)
         self.assertIn("SKIP: harbor_install", result.stdout)
 
     def test_install_preserves_existing_secrets_on_rerun(self) -> None:
@@ -294,7 +492,7 @@ class InstallScriptTest(unittest.TestCase):
             (root / "harbor" / "installer").mkdir(parents=True)
             write_executable(root / "harbor" / "installer" / "install.sh", "#!/usr/bin/env bash\nexit 0\n")
             (root / ".env.example").write_text(
-                "PUBLIC_SCHEME=http\nPUBLIC_HOST=REPLACE_ME_PUBLIC_HOST\nKEYCLOAK_ADMIN_PASSWORD=ChangeMe_Keycloak_Admin_123!\nOAUTH2_PROXY_COOKIE_SECRET=REPLACE_WITH_32_BYTE_SECRET\n",
+                "PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\nKEYCLOAK_ADMIN_PASSWORD=ChangeMe_Keycloak_Admin_123!\nOAUTH2_PROXY_COOKIE_SECRET=REPLACE_WITH_32_BYTE_SECRET\n",
                 encoding="utf-8",
             )
             result = subprocess.run(
@@ -405,7 +603,114 @@ class InstallScriptTest(unittest.TestCase):
             env_text = (root / ".env").read_text(encoding="utf-8")
 
         self.assertEqual(result.returncode, 0)
-        self.assertIn("PUBLIC_SCHEME=http\nKEYCLOAK_PUBLIC_HOST=auth.localhost\n", env_text)
+        self.assertIn("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\nBROWSER_HOST=localhost\nKEYCLOAK_PUBLIC_HOST=auth.localhost\n", env_text)
+
+    def test_install_runs_portainer_configuration_after_bootstrap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            log_file = root / "run.log"
+            hosts_file = root / "hosts"
+            write_executable(
+                root / "scripts" / "install_helper.py",
+                """#!/usr/bin/env python3
+import os
+import pathlib
+import sys
+
+log = pathlib.Path(os.environ["INSTALL_LOG"]) if os.environ.get("INSTALL_LOG") else None
+cmd = sys.argv[1]
+if cmd == "detect-public-ip":
+    print("192.168.50.10")
+elif cmd == "sync-hosts":
+    pathlib.Path(sys.argv[sys.argv.index("--hosts-file") + 1]).write_text("managed-hosts\\n", encoding="utf-8")
+elif cmd == "configure-portainer":
+    if log:
+        previous = log.read_text(encoding="utf-8") if log.exists() else ""
+        log.write_text(previous + "configure-portainer\\n", encoding="utf-8")
+elif cmd == "verify-install":
+    print('{"overall":"ready"}')
+else:
+    raise SystemExit(cmd)
+""",
+            )
+            for name in ("init-network.sh", "up-main.sh", "repair-mariadb-phpmyadmin-user.sh", "bootstrap-keycloak.sh"):
+                write_executable(root / "scripts" / name, f"#!/usr/bin/env bash\necho {name} >> \"$INSTALL_LOG\"\n")
+            write_executable(root / "scripts" / "panel.sh", "#!/usr/bin/env bash\necho panel.sh >> \"$INSTALL_LOG\"\n")
+            (root / ".env.example").write_text(
+                "PUBLIC_SCHEME=http\n"
+                "PUBLIC_HOST=REPLACE_ME_PUBLIC_HOST\n"
+                "BROWSER_HOST=localhost\n"
+                "KEYCLOAK_REALM=infra\n"
+                "PORTAINER_CLIENT_ID=portainer\n"
+                "PORTAINER_CLIENT_SECRET=portainer-secret\n"
+                "PORTAINER_ADMIN_USER=admin\n"
+                "PORTAINER_ADMIN_PASSWORD=StrongPassword_123\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["bash", "install.sh", "--base-domain", "dev.example", "--skip-panel"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "INSTALL_LOG": str(log_file), "INSTALL_HOSTS_FILE": str(hosts_file)},
+            )
+
+            lines = log_file.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(lines[-2:], ["bootstrap-keycloak.sh", "configure-portainer"])
+
+    def test_install_prints_verification_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            hosts_file = root / "hosts"
+            write_executable(
+                root / "scripts" / "install_helper.py",
+                """#!/usr/bin/env python3
+import pathlib
+import sys
+
+argv = sys.argv[1:]
+if argv[0] == "detect-public-ip":
+    print("192.168.50.10")
+elif argv[0] == "sync-hosts":
+    pathlib.Path(argv[argv.index("--hosts-file") + 1]).write_text("managed-hosts\\n", encoding="utf-8")
+elif argv[0] == "configure-portainer":
+    print("configured")
+elif argv[0] == "verify-install":
+    print('{"overall":"ready","checks":[{"host":"kafka.dev.example","result":"ready"}]}')
+else:
+    raise SystemExit(argv)
+""",
+            )
+            (root / ".env.example").write_text(
+                "PUBLIC_SCHEME=http\n"
+                "PUBLIC_HOST=REPLACE_ME_PUBLIC_HOST\n"
+                "BROWSER_HOST=localhost\n"
+                "KEYCLOAK_REALM=infra\n"
+                "PORTAINER_CLIENT_ID=portainer\n"
+                "PORTAINER_CLIENT_SECRET=portainer-secret\n"
+                "PORTAINER_ADMIN_USER=admin\n"
+                "PORTAINER_ADMIN_PASSWORD=StrongPassword_123\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["bash", "install.sh", "--base-domain", "dev.example", "--skip-panel"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "INSTALL_HOSTS_FILE": str(hosts_file)},
+            )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("Verification:", result.stdout)
+        self.assertIn("overall=ready", result.stdout)
+        self.assertIn("kafka.dev.example", result.stdout)
 
     def test_install_runs_existing_scripts_in_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -429,7 +734,7 @@ class InstallScriptTest(unittest.TestCase):
             ):
                 write_executable(root / "scripts" / name, f"#!/usr/bin/env bash\necho {name} >> \"$INSTALL_LOG\"\n")
             result = subprocess.run(
-                ["bash", "install.sh"],
+                ["bash", "install.sh", "--with-harbor"],
                 cwd=root,
                 capture_output=True,
                 text=True,
@@ -442,24 +747,30 @@ class InstallScriptTest(unittest.TestCase):
         self.assertEqual(
             output_lines,
             [
-                "[1/9] preflight",
+                "[1/12] preflight",
                 "OK: preflight",
-                "[2/9] env",
+                "[2/12] deps",
+                "OK: deps",
+                "[3/12] env",
                 "OK: env",
-                "[3/9] network",
+                "[4/12] network",
                 "OK: network",
-                "[4/9] main_stack",
+                "[5/12] main_stack",
                 "OK: main_stack",
-                "[5/9] phpmyadmin_user_repair",
-                "OK: phpmyadmin_user_repair",
-                "[6/9] harbor_prepare",
+                "[6/12] repair",
+                "OK: repair",
+                "[7/12] harbor_prepare",
                 "OK: harbor_prepare",
-                "[7/9] harbor_install",
+                "[8/12] harbor_install",
                 "OK: harbor_install",
-                "[8/9] bootstrap",
+                "[9/12] bootstrap",
                 "OK: bootstrap",
-                "[9/9] panel",
+                "[10/12] configure",
+                "OK: configure",
+                "[11/12] panel",
                 "OK: panel",
+                "[12/12] verify",
+                "OK: verify",
             ],
         )
         self.assertEqual(
@@ -507,7 +818,7 @@ class InstallScriptTest(unittest.TestCase):
             for name in ("init-network.sh", "up-main.sh", "repair-mariadb-phpmyadmin-user.sh", "prepare-harbor.sh", "bootstrap-keycloak.sh"):
                 write_executable(root / "scripts" / name, "#!/usr/bin/env bash\nexit 0\n")
             result = subprocess.run(
-                ["bash", "install.sh", "--skip-harbor", "--skip-panel"],
+                ["bash", "install.sh", "--skip-panel"],
                 cwd=root,
                 capture_output=True,
                 text=True,
@@ -522,24 +833,30 @@ class InstallScriptTest(unittest.TestCase):
         self.assertEqual(
             relevant_lines,
             [
-                "[1/9] preflight",
+                "[1/12] preflight",
                 "OK: preflight",
-                "[2/9] env",
+                "[2/12] deps",
+                "OK: deps",
+                "[3/12] env",
                 "OK: env",
-                "[3/9] network",
+                "[4/12] network",
                 "OK: network",
-                "[4/9] main_stack",
+                "[5/12] main_stack",
                 "OK: main_stack",
-                "[5/9] phpmyadmin_user_repair",
-                "OK: phpmyadmin_user_repair",
-                "[6/9] harbor_prepare",
+                "[6/12] repair",
+                "OK: repair",
+                "[7/12] harbor_prepare",
                 "SKIP: harbor_prepare",
-                "[7/9] harbor_install",
+                "[8/12] harbor_install",
                 "SKIP: harbor_install",
-                "[8/9] bootstrap",
+                "[9/12] bootstrap",
                 "OK: bootstrap",
-                "[9/9] panel",
+                "[10/12] configure",
+                "OK: configure",
+                "[11/12] panel",
                 "SKIP: panel",
+                "[12/12] verify",
+                "OK: verify",
             ],
         )
 
@@ -567,7 +884,7 @@ class InstallScriptTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("FAIL: main_stack", result.stderr)
-        self.assertEqual(lines, ["init-network.sh", "up-main.sh"])
+        self.assertEqual(lines, ["init-network.sh", "up-main.sh", "up-main.sh", "up-main.sh"])
         self.assertNotIn("prepare-harbor.sh", lines)
         self.assertNotIn("bootstrap-keycloak.sh", lines)
         self.assertNotIn("panel.sh", lines)

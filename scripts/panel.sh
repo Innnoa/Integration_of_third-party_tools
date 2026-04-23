@@ -39,17 +39,41 @@ is_panel_process() {
   [[ "${cmdline}" == *"python"* && "${cmdline}" == *"business_panel.main"* ]]
 }
 
-current_panel_pid() {
-  [[ -f "${PID_FILE}" ]] || return 1
+discover_panel_pid() {
+  local proc_path pid cwd
+  for proc_path in /proc/[0-9]*; do
+    pid="${proc_path#/proc/}"
+    is_panel_process "${pid}" || continue
 
+    cwd="$(readlink "${proc_path}/cwd" 2>/dev/null || true)"
+    if [[ "${cwd}" == "${ROOT_DIR}" ]]; then
+      echo "${pid}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+current_panel_pid() {
   local pid
-  pid="$(tr -d '[:space:]' < "${PID_FILE}" 2>/dev/null || true)"
-  if is_panel_process "${pid}"; then
+  if [[ -f "${PID_FILE}" ]]; then
+    pid="$(tr -d '[:space:]' < "${PID_FILE}" 2>/dev/null || true)"
+    if is_panel_process "${pid}"; then
+      echo "${pid}"
+      return 0
+    fi
+
+    rm -f "${PID_FILE}"
+  fi
+
+  if pid="$(discover_panel_pid)"; then
+    mkdir -p "${RUNTIME_DIR}"
+    echo "${pid}" > "${PID_FILE}"
     echo "${pid}"
     return 0
   fi
 
-  rm -f "${PID_FILE}"
   return 1
 }
 
