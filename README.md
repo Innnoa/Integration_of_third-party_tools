@@ -1,84 +1,120 @@
-# WSL2 DevOps SSO Stack
+# Integration of Third-party Tools
 
-本项目用于在 WSL2 的 Arch Linux 环境中，部署一套以 Keycloak 为统一认证中心的本地 DevOps 管理栈。  
+本项目用于在 Linux / WSL2 环境中部署一套带统一认证入口的本地第三方工具栈。当前主路径是：
 
-## 包含的服务
+- 根目录 `compose.yml` 负责主栈
+- 根目录 `install.sh` 负责推荐的一键安装
+- `scripts/` 负责环境准备、启动、初始化与验收
+- `business_panel/` 提供独立的本地业务面板
+- `harbor/` 保留 Harbor 官方安装路径，不并入主 `compose.yml`
 
-- Keycloak + PostgreSQL
+## 当前项目体系
+
+### 统一入口
+
+项目当前默认使用 `80` 端口作为统一 Web 入口，通过不同主机名分流到各业务：
+
+- Keycloak
 - Portainer
-- Kafka（单节点 KRaft）
-- KafkaUI
+- Kafka UI
 - RedisInsight
-- phpMyAdmin + MariaDB
-- mongo-express + MongoDB
-- oauth2-proxy
-- Harbor
+- phpMyAdmin
+- mongo-express
 - Nacos
 - Nightingale
+- Harbor（可选）
+
+非 Web 入口仍保留：
+
+- Kafka bootstrap：`PUBLIC_HOST:9092`
+- 业务面板：默认 `127.0.0.1:8090`
+
+### 认证与组件关系
+
+- Keycloak 是统一认证中心
+- `oauth2-proxy` 负责多个 Web 工具的前置登录保护
+- `gateway/nginx.conf` 负责按主机名转发到各服务
+- Harbor 继续使用官方 `install.sh` 生成自己的 compose，再通过 override 接入统一网络
+
+### phpMyAdmin 当前约束
+
+- 只有 `platform-admins` 组成员可以进入 phpMyAdmin
+- 非 `platform-admins` 成员会收到 `403`
+- 进入后会自动使用固定 MariaDB 账号登录
+- 该账号只授权 `appdb`
+- 如需重建该账号，可执行 `./install.sh --repair` 或 `./scripts/repair-mariadb-phpmyadmin-user.sh`
+
+### 当前包含内容
+
+- 主栈服务：Keycloak、PostgreSQL、Portainer、Kafka、Kafka UI、Redis、RedisInsight、MariaDB、phpMyAdmin、MongoDB、mongo-express、Nacos、Nightingale、gateway、oauth2-proxy
+- 可选模块：Harbor
+- 本地运维面板：`business_panel`
+- 自动化测试：`tests/`
+- 需求/计划留档：`docs/requirements/`、`docs/plans/`
+- 运行输出：`outputs/runtime/`
 
 ## 目录结构
 
 ```text
 .
-├── .env.example
-├── README.md
-├── compose.yml
-├── docs
-│   ├── plans
-│   └── requirements
-├── harbor
-│   ├── README.md
-│   ├── docker-compose.override.yml
-│   └── harbor.yml.example
-├── kafka-ui
-│   └── application.yml
-├── oauth2-proxy
-│   └── oauth2-proxy.cfg
-├── outputs
-│   └── runtime
-└── scripts
+├── .env.example                 # 环境变量模板
+├── compose.yml                  # 主栈 compose
+├── install.sh                   # 推荐安装入口
+├── business_panel/              # 本地业务面板
+├── gateway/                     # 统一 HTTP 入口配置
+├── harbor/                      # Harbor 模块与官方安装适配
+├── kafka-ui/                    # Kafka UI 配置
+├── nacos/                       # Nacos 配置与初始化 SQL
+├── nightingale/                 # Nightingale 配置与桥接脚本
+├── oauth2-proxy/                # oauth2-proxy 配置
+├── phpmyadmin/                  # phpMyAdmin 自定义配置
+├── scripts/                     # 安装、启动、修复、验收脚本
+├── tests/                       # 自动化测试
+├── docs/requirements/           # 冻结需求文档
+├── docs/plans/                  # 执行计划文档
+└── outputs/runtime/             # 运行日志与临时输出
 ```
 
-## WSL2 注意事项
+## 环境前提
 
-### 1. 不要把 OIDC 地址写成 localhost
+推荐在 Linux 或 WSL2 的 Linux 文件系统中运行，并提前准备：
 
-浏览器和容器内服务访问 Keycloak 时，必须看到同一个 issuer。  
-因此 `.env` 里的 `PUBLIC_HOST` 应该填写：
+- Docker
+- Docker Compose Plugin
+- Python 3
+- `sudo` 权限（推荐安装路径会写当前 Linux 主机的 `hosts`）
 
-- WSL2 当前 IP
-- 或你后续准备用的本地域名
+补充约束：
 
-不要在 Keycloak client、Harbor hostname、oauth2-proxy redirect URI 里混用 `localhost` 和 IP。
+- 数据目录建议放 Linux 文件系统，不要放 `/mnt/c/...`
+- OIDC 相关主机名不要混用 `localhost` 和 IP
+- 如果你在 WSL2 中使用浏览器，Windows 宿主机的 `hosts` 仍需手动补齐
 
-### 2. 数据目录尽量放 Linux 文件系统
+## 推荐安装路径
 
-数据库与 Harbor 数据目录建议留在 WSL Linux 文件系统，例如：
+推荐直接走一键安装，当前项目的主入口是根目录 `install.sh`。
 
-- `/home/...`
-- `/opt/...`
-- `/srv/...`
-
-不建议放 `/mnt/c/...`，否则更容易碰到性能和权限问题。
-
-### 3. Windows 访问与局域网访问
-
-- Windows 本机优先使用 `http://localhost:<port>`
-- 如果 `PUBLIC_HOST` 对应的 WSL IP 在 Windows 浏览器里返回异常，但 `localhost` 正常，这是 WSL2/宿主机转发路径问题，不是容器本身问题
-- 如果要让局域网其他机器访问，需要额外处理 WSL2 网络映射
-- 这部分不在本项目脚本自动化范围内
-
-## 快速开始
-
-### 0. 一键安装
-
-如果你希望按当前项目约定直接完成预检、补 `.env`、维护当前 Linux 主机的 `/etc/hosts`、启动主栈、初始化 Keycloak、配置 Portainer OIDC，并输出安装后验收摘要，可以直接运行：
+### 1. 基本安装
 
 ```bash
 sudo ./install.sh --base-domain example.internal
 ```
 
-常用参数：
+这个入口会按当前项目约定完成以下动作：
+
+- 预检依赖
+- 生成或补齐 `.env`
+- 自动派生 `auth.<domain>`、`portainer.<domain>`、`nacos.<domain>` 等主机名
+- 自动回写当前 Linux 主机的 `PUBLIC_HOST`、`KAFKA_HOST_BOOTSTRAP_SERVER` 与各个 `*_PUBLIC_HOST`
+- 写入当前 Linux 主机的 `hosts`
+- 启动主栈
+- 初始化 Keycloak
+- 配置 Portainer OIDC
+- 修复 phpMyAdmin 自动登录账号
+- 启动业务面板（默认开启）
+- 执行安装后验收并输出摘要
+
+### 2. 常用参数
 
 ```bash
 sudo ./install.sh --base-domain example.internal --repair
@@ -87,58 +123,133 @@ sudo ./install.sh --base-domain example.internal --public-ip 192.168.50.10
 sudo ./install.sh --base-domain example.internal --with-harbor
 ```
 
-说明：
+参数说明：
 
-- `--base-domain` 是一键安装主路径的必填参数，脚本会自动派生 `auth.<domain>`、`portainer.<domain>`、`nacos.<domain>` 等入口域名
-- 默认会写入当前 Linux 主机的 `/etc/hosts`；如果你只想先演练流程，可以临时指定 `INSTALL_HOSTS_FILE=/path/to/hosts`
-- 默认会自动探测本机对外 IP，并回写 `PUBLIC_HOST` 与 `KAFKA_HOST_BOOTSTRAP_SERVER`；如需固定值可传 `--public-ip`
-- `--repair` 是对同一安装流程的重跑/修复模式，不是单独的安装路径
-- 安装脚本默认不安装 Harbor；只有显式传入 `--with-harbor` 时，才会执行 Harbor prepare / install
-- `--skip-harbor` 仍然保留，用于兼容旧调用方式
-- 安装脚本会先做预检和依赖检查；若发现缺少受支持依赖，会尝试通过当前发行版的包管理器自动安装
-- 安装脚本会在 `.env` 缺少常用密码或 secret 占位值时自动生成安全随机值
-- 安装主栈前会按 `.env` 自动渲染 `nightingale/config.toml`
-- 对 `main_stack`、`bootstrap`、`configure`、`verify` 等关键阶段会做有限次重试
-- 安装完成后会自动尝试校验主入口；命中 Keycloak / oauth2-proxy 跳转也会视为 ready
-- 最终输出会包含 `overall=success|degraded|failed` 和每个阶段的结果摘要
-- 脚本只会维护当前 Linux 主机的 `/etc/hosts`，不会自动修改 Windows 宿主机的 `hosts` 文件；如果你从 Windows 浏览器访问，仍需要手工同步
-- 如果要安装 Harbor，才需要 `harbor/installer/` 目录和其中的安装脚本已经存在
+- `--base-domain`：必填，安装脚本会据此派生各服务主机名
+- `--repair`：重跑安装链路并修复已有环境
+- `--skip-panel`：不启动本地业务面板
+- `--public-ip`：覆盖自动探测到的对外地址
+- `--with-harbor`：进入 Harbor 准备与安装路径
 
-### 1. 复制环境文件
+### 3. 安装后访问
+
+安装完成后，以 `.env` 中当前值为准，典型入口如下：
+
+- `http://auth.<base-domain>`
+- `http://portainer.<base-domain>`
+- `http://kafka.<base-domain>`
+- `http://redis.<base-domain>`
+- `http://pma.<base-domain>`
+- `http://mongo.<base-domain>`
+- `http://nacos.<base-domain>`
+- `http://nightingale.<base-domain>`
+- `http://harbor.<base-domain>`（仅启用 Harbor 时）
+- `http://127.0.0.1:8090`（默认业务面板）
+
+### 4. 安装后建议检查
+
+```bash
+./scripts/check-main.sh
+./scripts/services.sh status
+./scripts/panel.sh status
+```
+
+## 手动安装路径
+
+如果你不想直接执行一键安装，可以按当前脚本链路手动完成。
+
+### 1. 生成 `.env`
 
 ```bash
 ./scripts/prepare-env.sh
 ```
 
-然后编辑 `.env`，至少修改：
+然后至少检查并修改：
 
 - `PUBLIC_HOST`
-- 所有密码和 secret
-- `KAFKA_BOOTSTRAP_SERVERS`
-- `KAFKA_HOST_BOOTSTRAP_SERVER`
-- `KEYCLOAK_TEST_PASSWORD`，如果你准备直接用脚本创建本地测试用户
+- `KEYCLOAK_PUBLIC_HOST`
+- `PORTAINER_PUBLIC_HOST`
+- `KAFKA_UI_PUBLIC_HOST`
+- `REDISINSIGHT_PUBLIC_HOST`
+- `PHPMYADMIN_PUBLIC_HOST`
+- `MONGO_EXPRESS_PUBLIC_HOST`
+- `NACOS_PUBLIC_HOST`
+- `NIGHTINGALE_PUBLIC_HOST`
+- 所有密码与 secret 项
 
-### 2. 创建外部网络
+### 2. 初始化网络并启动主栈
 
 ```bash
 ./scripts/init-network.sh
-```
-
-### 3. 启动主栈
-
-```bash
 ./scripts/up-main.sh
 ```
 
-### 4. 检查主栈状态
+也可以直接使用：
+
+```bash
+docker compose --env-file .env -f compose.yml up -d
+```
+
+### 3. 初始化认证与业务配置
+
+```bash
+./scripts/bootstrap-keycloak.sh
+```
+
+这个脚本会按当前项目约定初始化 realm、测试用户、客户端和部分认证配置。
+
+### 4. 启动业务面板
+
+```bash
+./scripts/panel.sh start
+```
+
+默认访问地址来自 `.env`：
+
+```text
+http://BUSINESS_PANEL_HOST:BUSINESS_PANEL_PORT
+```
+
+### 5. 验证
 
 ```bash
 ./scripts/check-main.sh
+./scripts/services.sh status
 ```
 
-### 5. 统一启停所有服务
+## Harbor 路径
 
-推荐直接使用总控脚本：
+Harbor 不直接放进主 `compose.yml`，当前仓库保留官方安装路径。
+
+### 1. 准备官方安装包
+
+- 把 Harbor `online installer` 解压到 `harbor/installer/`
+- 确保 `harbor/installer/install.sh` 存在
+
+### 2. 准备配置
+
+```bash
+./scripts/init-network.sh
+./scripts/prepare-harbor.sh
+```
+
+这一步会基于当前项目内容准备：
+
+- `harbor/installer/harbor.yml`
+- `harbor/installer/docker-compose.override.yml`
+
+### 3. 执行官方安装
+
+```bash
+cd harbor/installer
+./install.sh --with-trivy
+```
+
+安装完成后，`scripts/services.sh start|stop|restart|status` 会同时处理主栈和 Harbor。
+
+## 常用运维命令
+
+### 主栈与 Harbor
 
 ```bash
 ./scripts/services.sh start
@@ -147,475 +258,71 @@ sudo ./install.sh --base-domain example.internal --with-harbor
 ./scripts/services.sh status
 ```
 
-说明：
-
-- `start` 会先启动主栈，再在 Harbor compose 存在时启动 Harbor
-- `stop` 只停止容器，不删除卷
-- `restart` 适合你重新测试前做一次完整重启
-- `status` 会同时显示主栈和 Harbor 的状态
-
-## 默认访问入口
-
-当前默认只保留统一 Web 入口 `80` 端口，按主机名分流：
-
-- Keycloak: `http://auth.localhost`
-- Portainer: `http://portainer.localhost`
-- KafkaUI: `http://kafka.localhost`
-- RedisInsight: `http://redis.localhost`
-- phpMyAdmin: `http://pma.localhost`
-- mongo-express: `http://mongo.localhost`
-- Harbor: `http://harbor.localhost`
-- Nacos: `http://nacos.localhost`
-- Nightingale: `http://nightingale.localhost`
-
-非 Web 入口仍单独保留：
-
-- Kafka bootstrap: `PUBLIC_HOST:9092`
-
-## 统一业务面板（v1）
-
-业务面板用于统一查看业务单元状态并执行受控启停。
-
-### 启动方式
+### 业务面板
 
 ```bash
 ./scripts/panel.sh start
+./scripts/panel.sh stop
+./scripts/panel.sh restart
+./scripts/panel.sh status
 ```
 
-### 访问地址
+### 其他常用脚本
 
-```text
-http://BUSINESS_PANEL_HOST:BUSINESS_PANEL_PORT
+```bash
+./scripts/check-main.sh
+./scripts/repair-mariadb-phpmyadmin-user.sh
 ```
 
-上面的地址表示面板服务的监听/绑定地址。默认值来自 `.env` 中的 `BUSINESS_PANEL_HOST` 与 `BUSINESS_PANEL_PORT`（默认 `127.0.0.1:8090`）。
-如果 `BUSINESS_PANEL_HOST=0.0.0.0`，浏览器访问时应使用实际可达的主机名或 IP（例如 WSL2 IP 或 `localhost` 的可达映射），不要直接输入 `0.0.0.0`。
+## 业务面板说明
 
-### v1 能力范围
+`business_panel` 是独立于主 compose 的本地 Python 服务，用于统一查看业务状态并执行受控启停。
 
-- 业务卡片提供直达链接：Keycloak、Portainer、KafkaUI、RedisInsight、phpMyAdmin、mongo-express、Harbor、Nacos、Nightingale
-- 每个业务单元提供三层状态：`container / endpoint / auth`
-- 支持栈级控制：`all` 的 `start / stop / restart`
-- 支持业务单元级控制：每张业务卡片的 `start / stop / restart`
+当前能力：
 
-补充说明：业务卡片的直达链接和面板内状态探测默认按 `BROWSER_HOST` 生成，适合本机浏览器直接走 `localhost`。这不会改动主栈自身仍使用的 `PUBLIC_HOST` / OIDC 配置；如果你的浏览器访问主机不是 `localhost`，请把 `.env` 里的 `BROWSER_HOST` 改成实际访问主机。
+- 展示各业务入口链接
+- 展示 `container / endpoint / auth` 三层状态
+- 支持栈级与业务级 `start / stop / restart`
 
-## 统一主机名入口（HTTP）
+默认监听值来自 `.env`：
 
-当前项目支持通过统一反向代理入口把多个业务收敛到 `80` 端口，并按主机名分流。
+- `BUSINESS_PANEL_HOST=127.0.0.1`
+- `BUSINESS_PANEL_PORT=8090`
 
-### Windows `hosts` 必填项
+如果把 `BUSINESS_PANEL_HOST` 改成 `0.0.0.0`，浏览器访问时仍应使用实际可达的主机名或 IP，不要直接访问 `0.0.0.0`。
 
-需要在 Windows 宿主机的 `hosts` 文件中加入当前 `.env` 里各个 `*_PUBLIC_HOST` 对应的主机名。安装脚本最终摘要会按当前值给出提示；下面这组只是默认示例：
+## 验证与测试
 
-```text
-127.0.0.1 auth.localhost
-127.0.0.1 portainer.localhost
-127.0.0.1 kafka.localhost
-127.0.0.1 redis.localhost
-127.0.0.1 pma.localhost
-127.0.0.1 mongo.localhost
-127.0.0.1 harbor.localhost
-127.0.0.1 nacos.localhost
-127.0.0.1 nightingale.localhost
+文档外的常规检查方式：
+
+```bash
+PYTHONPATH=. pytest -q tests
+docker compose --env-file .env -f compose.yml config
+./scripts/check-main.sh
 ```
-
-Windows `hosts` 示例：
-
-```text
-127.0.0.1 auth.localhost
-127.0.0.1 portainer.localhost
-127.0.0.1 kafka.localhost
-127.0.0.1 redis.localhost
-127.0.0.1 pma.localhost
-127.0.0.1 mongo.localhost
-127.0.0.1 harbor.localhost
-127.0.0.1 nacos.localhost
-127.0.0.1 nightingale.localhost
-```
-
-如果你把 `.env` 中的 `KEYCLOAK_PUBLIC_HOST`、`PORTAINER_PUBLIC_HOST`、`KAFKA_UI_PUBLIC_HOST`、`REDISINSIGHT_PUBLIC_HOST`、`PHPMYADMIN_PUBLIC_HOST`、`MONGO_EXPRESS_PUBLIC_HOST`、`HARBOR_PUBLIC_HOST`、`NACOS_PUBLIC_HOST`、`NIGHTINGALE_PUBLIC_HOST` 改成了其他值，`hosts` 也要同步改成这些当前值。
-
-统一入口主机名：
-
-- Keycloak: `http://auth.localhost`
-- Portainer: `http://portainer.localhost`
-- KafkaUI: `http://kafka.localhost`
-- RedisInsight: `http://redis.localhost`
-- phpMyAdmin: `http://pma.localhost`
-- mongo-express: `http://mongo.localhost`
-- Harbor: `http://harbor.localhost`
-- Nacos: `http://nacos.localhost`
-- Nightingale: `http://nightingale.localhost`
 
 说明：
 
-- 当前方案默认关闭旧的 Web 宿主机端口入口，仅保留统一入口 `80`
-- 新的浏览器公开地址、OAuth redirect URI 和业务面板直达链接都以各服务自己的 `*_PUBLIC_HOST` 为准
-- 包括 Nacos 与 Nightingale 在内，统一入口下都使用同一个 `auth.localhost`（Keycloak）登录会话
-- `PUBLIC_HOST` 仍保留给当前主栈里尚未拆分的地址用途，例如 Kafka 宿主机 broker 广播地址
+- `PYTHONPATH=. pytest -q tests` 用于校验当前脚本与 Python 逻辑
+- `docker compose ... config` 用于校验 compose 解析
+- `./scripts/check-main.sh` 用于查看当前环境的访问入口与主栈状态
 
-### v1 限制
+## WSL2 与访问约束
 
-- Portainer 在 v1 中不做稳定的端到端认证检查（仅保留 `not_checked` 级别）
-- Harbor OIDC 在 v1 仅做页面级证据检查，不读取 Harbor 后台配置
-- Nacos 与 Nightingale 在 v1 只保证接通 Keycloak 登录；角色、团队和管理员映射暂未自动化
+### 1. 不要把 issuer 混成两套地址
 
-## Keycloak 初始化
+浏览器访问地址、Keycloak client 配置、oauth2-proxy issuer、Harbor OIDC endpoint 应尽量使用同一套主机名体系。
 
-### 1. 登录管理台
+### 2. Windows `hosts` 需要单独维护
 
-打开：
+一键安装默认只维护当前 Linux 主机的 `hosts`。如果浏览器运行在 Windows 宿主机，你还需要把 `.env` 中当前各个 `*_PUBLIC_HOST` 加到 Windows `hosts`。
 
-```text
-http://PUBLIC_HOST:8080/admin
-```
+### 3. `localhost` 与 IP 只选一套对外口径
 
-使用 `.env` 里的：
+如果 `.env` 已改成域名或 WSL2 IP，就不要再在 OIDC 相关回调里混用 `localhost`。
 
-- `KEYCLOAK_ADMIN_USER`
-- `KEYCLOAK_ADMIN_PASSWORD`
+## 相关文档
 
-### 2. 创建 Realm
-
-推荐：
-
-- Realm name: `infra`
-
-如果你修改过 `.env` 里的 `KEYCLOAK_REALM`，就以你自己的值为准。
-
-### 3. 创建组
-
-建议至少创建：
-
-- `/platform-admins`
-- `/harbor-admins`
-- `/kafka-admins`
-- `/tools-users`
-
-### 4. 创建测试用户
-
-例如：
-
-- Username: `opsadmin`
-- Email: `opsadmin@example.local`
-
-并把用户加入适当的组。
-
-### 5. 创建 groups Client Scope
-
-在 `Client scopes` 里创建一个 `groups` scope，增加 `Group Membership` mapper：
-
-- Token Claim Name: `groups`
-- Full group path: `ON`
-- Add to ID token: `ON`
-- Add to access token: `ON`
-- Add to userinfo: `ON`
-
-## Keycloak Clients 建议
-
-### 1. Portainer
-
-- Client ID: `portainer`
-- Client Type: `OpenID Connect`
-- Client authentication: `ON`
-- Standard flow: `ON`
-- Valid redirect URIs:
-  - `http://portainer.localhost/`
-- Valid post logout redirect URIs:
-  - `+`
-- Web origins:
-  - `http://portainer.localhost`
-- Default client scopes:
-  - `profile`
-  - `email`
-  - `groups`
-
-### 2. KafkaUI
-
-- Client ID: `kafka-ui`
-- Client authentication: `ON`
-- Standard flow: `ON`
-- Valid redirect URIs:
-  - `http://kafka.localhost/login/oauth2/code/keycloak`
-- Valid post logout redirect URIs:
-  - `http://kafka.localhost/`
-- Web origins:
-  - `http://kafka.localhost`
-- Default client scopes:
-  - `profile`
-  - `email`
-  - `groups`
-
-### 2.1 Kafka Broker
-
-- 部署方式：单节点 Kafka，KRaft 模式，无 ZooKeeper
-- 容器内地址：`kafka:29092`
-- 宿主机地址：`PUBLIC_HOST:9092`
-- 当前定位：给 KafkaUI 和本机调试提供一个最小可用的 broker
-
-### 3. oauth2-proxy
-
-- Client ID: `oauth2-proxy`
-- Client authentication: `ON`
-- Standard flow: `ON`
-- Valid redirect URIs:
-  - `http://redis.localhost/oauth2/callback`
-  - `http://pma.localhost/oauth2/callback`
-  - `http://mongo.localhost/oauth2/callback`
-  - `http://nacos.localhost/oauth2/callback`
-- Valid post logout redirect URIs:
-  - `http://redis.localhost/*`
-  - `http://pma.localhost/*`
-  - `http://mongo.localhost/*`
-  - `http://nacos.localhost/*`
-- Web origins:
-  - `+`
-- Default client scopes:
-  - `profile`
-  - `email`
-  - `groups`
-
-#### Audience mapper
-
-`oauth2-proxy` client 建议额外增加一个 Audience mapper，把 `oauth2-proxy` 自己加入 token audience。
-
-### 4. Harbor
-
-- Client ID: `harbor`
-- Client authentication: `ON`
-- Standard flow: `ON`
-- Valid redirect URIs:
-  - `http://harbor.localhost/*`
-- Valid post logout redirect URIs:
-  - `http://harbor.localhost/*`
-- Web origins:
-  - `http://harbor.localhost`
-- Default client scopes:
-  - `profile`
-  - `email`
-  - `groups`
-
-## 各服务接入说明
-
-### Portainer
-
-`install.sh --base-domain ...` 会在首次安装时自动通过 Portainer API 写入这组 OIDC 配置。  
-如果你是手工部署或想核对配置，可以在 Portainer 后台查看：
-
-- `Settings -> Authentication -> OAuth`
-
-填写：
-
-- Client ID: `portainer`
-- Client Secret: `PORTAINER_CLIENT_SECRET`
-- Authorization URL: `http://auth.localhost/realms/infra/protocol/openid-connect/auth`
-- Access Token URL: `http://auth.localhost/realms/infra/protocol/openid-connect/token`
-- Resource URL: `http://auth.localhost/realms/infra/protocol/openid-connect/userinfo`
-- Redirect URL: `http://portainer.localhost/`
-- Logout URL: `http://auth.localhost/realms/infra/protocol/openid-connect/logout`
-- User Identifier: `preferred_username`
-- Scopes: `openid profile email groups`
-- Auto create users: `ON`
-
-建议第一次不要隐藏本地登录，等 OIDC 跑通后再收口。
-
-### Nightingale
-
-夜莺继续使用原生 OIDC。仓库里的 `nightingale/config.toml` 不是手工长期维护文件，`scripts/up-main.sh` 会在启动前根据 `.env` 重新渲染，关键输入包括：
-
-- `KEYCLOAK_PUBLIC_HOST`
-- `KEYCLOAK_REALM`
-- `NIGHTINGALE_PUBLIC_HOST`
-- `NIGHTINGALE_CLIENT_SECRET`
-- `NIGHTINGALE_DB_PASSWORD`
-- `NIGHTINGALE_REDIS_PASSWORD`
-
-### KafkaUI
-
-KafkaUI 已经通过 `kafka-ui/application.yml` 预设 OIDC。  
-只要 Keycloak client 配对，访问：
-
-```text
-http://PUBLIC_HOST:8082
-```
-
-就会跳到 Keycloak 登录。
-
-### Kafka
-
-Kafka 本体采用单节点 KRaft 模式：
-
-- 容器内 broker：`kafka:29092`
-- 宿主机 broker：`PUBLIC_HOST:9092`
-
-检查 Kafka 运行情况：
-
-```bash
-./scripts/check-kafka.sh
-```
-
-如果你想从宿主机测试连接，使用：
-
-```text
-PUBLIC_HOST:9092
-```
-
-### oauth2-proxy 前置保护
-
-以下入口都经过 Keycloak 认证：
-
-- RedisInsight: `http://PUBLIC_HOST:4180`
-- phpMyAdmin: `http://PUBLIC_HOST:4181`
-- mongo-express: `http://PUBLIC_HOST:4182`
-- Nacos: `http://nacos.localhost`
-
-第一次访问会跳转到 Keycloak。  
-后续因为已经有 Keycloak 会话，一般不需要重复输密码。
-
-Nacos 现在通过 `gateway -> oauth2-proxy-nacos -> Nacos Console` 进入，不再依赖 Nacos 原生 OIDC 登录页。
-
-#### phpMyAdmin 自动登录说明
-
-- 只有 `platform-admins` 组成员可以进入 phpMyAdmin
-- 通过 SSO 后，进入后会自动使用固定 MariaDB 账号登录
-- 该账号只授权 `appdb`
-- 非 `platform-admins` 成员会收到 `403`
-- 如果你修改了 `PHPMYADMIN_AUTOLOGIN_PASSWORD`、`PHPMYADMIN_AUTOLOGIN_USER` 或数据库权限，重跑 `./install.sh --repair`
-- 只需要补数据库账号权限时，也可以单独执行 `./scripts/repair-mariadb-phpmyadmin-user.sh`
-
-## Harbor 安装与 OIDC
-
-Harbor 保持官方安装方式，不并入主 compose。
-
-### 1. 下载 Harbor online installer
-
-从 Harbor 官方 release 下载并解压到：
-
-```text
-harbor/installer/
-```
-
-### 2. 准备 Harbor 配置
-
-执行：
-
-```bash
-./scripts/prepare-harbor.sh
-```
-
-这个脚本会：
-
-- 检查 `harbor/installer/install.sh` 是否存在
-- 复制 `harbor/harbor.yml.example` 到 `harbor/installer/harbor.yml`
-- 复制 `harbor/docker-compose.override.yml` 到 `harbor/installer/`
-- 用 `.env` 里的 `PUBLIC_HOST`、`HARBOR_ADMIN_PASSWORD`、`TOOLS_NETWORK` 替换模板中的关键值
-
-### 3. 安装 Harbor
-
-```bash
-cd harbor/installer
-./install.sh --with-trivy
-```
-
-### 4. 配置 Harbor OIDC
-
-Harbor Web UI 中进入：
-
-- `Administration -> Configuration -> Authentication`
-
-填写：
-
-- Auth Mode: `OIDC`
-- OIDC Provider Name: `keycloak`
-- OIDC Provider Endpoint: `http://PUBLIC_HOST:8080/realms/infra`
-- OIDC Client ID: `harbor`
-- OIDC Client Secret: `HARBOR_CLIENT_SECRET`
-- OIDC Scope: `openid,profile,email,groups,offline_access`
-- Group Claim Name: `groups`
-- OIDC Admin Group: `/harbor-admins`
-- Username Claim: `preferred_username`
-- Automatic Onboarding: `ON`
-
-## Harbor Docker CLI 注意事项
-
-如果 Harbor 仍然走 HTTP，本机 Docker 需要加 insecure registry。  
-例如编辑 `/etc/docker/daemon.json`：
-
-```json
-{
-  "insecure-registries": ["PUBLIC_HOST:8088"]
-}
-```
-
-然后重启 Docker：
-
-```bash
-sudo systemctl restart docker
-```
-
-另外要注意：
-
-- `docker login PUBLIC_HOST:8088` 使用的不是 Keycloak 密码
-- 需要在 Harbor Web UI 中获取对应用户的 `CLI Secret`
-
-## SSO 验证步骤
-
-按这个顺序验证最直观：
-
-1. 先登录 `http://PUBLIC_HOST:8080`
-2. 打开 `http://PUBLIC_HOST:19000`
-3. 打开 `http://PUBLIC_HOST:8082`
-4. 打开 `http://PUBLIC_HOST:4180`
-5. 打开 `http://PUBLIC_HOST:4181`
-6. 打开 `http://PUBLIC_HOST:4182`
-7. 打开 `http://PUBLIC_HOST:8088`
-
-如果 2 到 7 都能在已有 Keycloak 会话下直接进入或无感回跳，说明统一登录已基本跑通。
-
-## 常见问题排查
-
-### 1. redirect_uri mismatch
-
-检查：
-
-- Keycloak client 的 redirect URI 是否与实际访问地址完全一致
-- 端口、路径、结尾 `/` 是否一致
-- 有没有把 `localhost` 和 IP 混用
-
-### 2. Harbor OIDC 登录失败
-
-重点看：
-
-- Harbor 的 `hostname` 不是 `localhost`
-- Harbor OIDC endpoint 是 `http://PUBLIC_HOST:8080/realms/infra`
-- Keycloak client 的 redirect URI 先放宽到 `http://PUBLIC_HOST:8088/*`
-
-### 3. oauth2-proxy 循环跳转
-
-检查：
-
-- `OAUTH2_PROXY_COOKIE_SECRET` 是否正确
-- `oauth2-proxy` client 是否加了 audience
-- 三个 oauth2-proxy 实例是不是误用了同一个 cookie name
-
-### 4. RedisInsight 卷权限问题
-
-如果 RedisInsight 无法写 `/data`：
-
-- 可以改为 bind mount 到 Linux 文件系统目录
-- 或手动调整卷权限给 UID 1000
-
-### 5. WSL2 中能访问，Windows 或局域网不能访问
-
-这通常不是 compose 问题，而是 WSL2 网络映射问题。  
-需要你自行处理 Windows 端口转发、防火墙或 mirrored networking。
-
-## 静态校验
-
-建议在每次修改配置后运行：
-
-```bash
-bash -n scripts/*.sh
-docker compose --env-file .env config >/dev/null
-```
+- `harbor/README.md`：Harbor 模块单独说明
+- `docs/requirements/`：已冻结的需求文档
+- `docs/plans/`：实现计划与执行拆解
