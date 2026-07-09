@@ -15,9 +15,9 @@
 **Files:**
 - Modify: `tests/test_install_script.py`
 
-- [ ] 补失败测试，锁定 `deps` 阶段会在缺少依赖时自动调用受支持发行版的包管理器
-- [ ] 补失败测试，锁定 `main_stack` 或 `verify` 阶段失败时会按有限次数重试
-- [ ] 补失败测试，锁定最终摘要会输出 `overall` 和阶段结果
+- [x] 补失败测试，锁定 `deps` 阶段会在缺少依赖时自动调用受支持发行版的包管理器
+- [x] 补失败测试，锁定 `main_stack` 或 `verify` 阶段失败时会按有限次数重试
+- [x] 补失败测试，锁定最终摘要会输出 `overall` 和阶段结果
 
 ### Task 2: Implement dependency detection, package-manager mapping, and retries
 
@@ -25,10 +25,10 @@
 - Modify: `scripts/install-lib.sh`
 - Modify: `install.sh`
 
-- [ ] 在 `install-lib.sh` 增加发行版/包管理器检测与缺失命令判断
-- [ ] 实现 `deps` 阶段，支持 `apt / dnf / yum / pacman / zypper`
-- [ ] 为关键阶段增加统一重试包装，并在失败前尝试已知安全修复
-- [ ] 让阶段日志和状态可被最终摘要读取
+- [x] 在 `install-lib.sh` 增加发行版/包管理器检测与缺失命令判断
+- [x] 实现 `deps` 阶段，支持 `apt / dnf / yum / pacman / zypper`
+- [x] 为关键阶段增加统一重试包装，并在失败前尝试已知安全修复
+- [x] 让阶段日志和状态可被最终摘要读取
 
 ### Task 3: Tighten verification and summarize outcomes
 
@@ -37,15 +37,15 @@
 - Modify: `install.sh`
 - Modify: `README.md`
 
-- [ ] 让 `verify` 成为常规阶段，而不是只在 `--base-domain` 时触发
-- [ ] 输出 `success / degraded / failed` 总状态和各阶段结果
-- [ ] 更新 README 中 `install.sh` 的能力说明与成功标准
+- [x] 让 `verify` 成为常规阶段，而不是只在 `--base-domain` 时触发
+- [x] 输出 `success / degraded / failed` 总状态和各阶段结果
+- [x] 更新 README 中 `install.sh` 的能力说明与成功标准
 
 ### Task 4: Run focused verification
 
 **Files:**
 - Modify: `tests/test_install_script.py`（如需修正合同）
 
-- [ ] 运行安装器相关测试
-- [ ] 运行 `docker compose --env-file .env -f compose.yml config`
-- [ ] 检查安装器输出与 README 描述一致
+- [x] 运行安装器相关测试
+- [x] 运行 `docker compose --env-file .env -f compose.yml config`
+- [x] 检查安装器输出与 README 描述一致

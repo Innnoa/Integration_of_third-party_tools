@@ -130,6 +130,31 @@
 
 推荐直接走一键安装，当前项目的主入口是根目录 `install.sh`。
 
+### 安装阶段模型
+
+`install.sh` 按固定阶段依次执行：
+
+| 阶段 | 说明 | 重试 |
+| --- | --- | --- |
+| preflight | 检测发行版、Shell、Docker、端口等前置条件 | 1 次 |
+| deps | 自动检测包管理器并安装缺失依赖（支持 apt/dnf/yum/pacman/zypper） | 2 次 |
+| env | 生成或补齐 `.env`，自动替换占位 secret | 1 次 |
+| network | 创建或复用 Docker 网络 | 1 次 |
+| main_stack | 启动主栈服务 | 3 次 |
+| repair | 修复已知可恢复问题（如 phpMyAdmin 账号） | 1 次 |
+| harbor_prepare | 准备 Harbor 安装环境（可选） | 1 次 |
+| harbor_install | 安装 Harbor（可选） | 1 次 |
+| bootstrap | 初始化 Keycloak realm / group / client / user | 2 次 |
+| configure | 写入 Portainer OIDC 等安装后配置 | 2 次 |
+| panel | 启动业务面板（可选，失败不影响总体） | 1 次 |
+| verify | HTTP 入口验收，检查各服务可达性 | 2 次 |
+
+每个阶段失败时会在有限次数内自动重试；最终输出三种总体状态：
+
+- **success**：所有关键阶段通过，全部入口可达
+- **degraded**：可选阶段失败但主服务正常（如 panel 未启动）
+- **failed**：关键阶段失败，安装未完成
+
 ### 1. 基本安装
 
 ```bash
@@ -138,7 +163,8 @@ sudo ./install.sh --base-domain example.internal
 
 这个入口会按当前项目约定完成以下动作：
 
-- 预检依赖
+- 预检依赖，自动识别发行版与包管理器
+- 自动安装缺失的系统依赖（`python3`、`docker`、`docker compose` 等）
 - 生成或补齐 `.env`
 - 自动派生 `auth.<domain>`、`portainer.<domain>`、`nacos.<domain>` 等主机名
 - 自动回写当前 Linux 主机的 `PUBLIC_HOST`、`KAFKA_HOST_BOOTSTRAP_SERVER` 与各个 `*_PUBLIC_HOST`

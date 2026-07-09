@@ -12,6 +12,7 @@ INSTALL_VERIFICATION_SUMMARY="${INSTALL_VERIFICATION_SUMMARY:-}"
 INSTALL_REQUIRED_COMMANDS="${INSTALL_REQUIRED_COMMANDS:-python3 docker docker-compose-plugin}"
 INSTALL_PACKAGE_MANAGER="${INSTALL_PACKAGE_MANAGER:-}"
 INSTALL_RETRY_DELAY_SECONDS="${INSTALL_RETRY_DELAY_SECONDS:-0}"
+INSTALL_DEPS_RETRIES="${INSTALL_DEPS_RETRIES:-2}"
 INSTALL_MAIN_STACK_RETRIES="${INSTALL_MAIN_STACK_RETRIES:-3}"
 INSTALL_BOOTSTRAP_RETRIES="${INSTALL_BOOTSTRAP_RETRIES:-2}"
 INSTALL_CONFIGURE_RETRIES="${INSTALL_CONFIGURE_RETRIES:-2}"
@@ -659,6 +660,7 @@ deps_stage() {
   local manager=""
   local packages_text=""
   local dependency package
+  local attempted=()
 
   mapfile -t missing < <(collect_missing_dependencies)
   if (( ${#missing[@]} == 0 )); then
@@ -671,9 +673,16 @@ deps_stage() {
   }
 
   if [[ "${manager}" == "apt-get" ]]; then
-    run_privileged apt-get update
+    run_privileged apt-get update || true
     for dependency in "${missing[@]}"; do
-      install_apt_dependency "${dependency}" || return 1
+      install_apt_dependency "${dependency}" || {
+        printf '已尝试命令:\n' >&2
+        local cmd
+        for cmd in "${attempted[@]}"; do
+          printf -- '- %s\n' "${cmd}" >&2
+        done
+        return 1
+      }
     done
   else
     for dependency in "${missing[@]}"; do
@@ -683,7 +692,10 @@ deps_stage() {
 
     # shellcheck disable=SC2206
     local packages=(${packages_text})
-    install_dependencies "${manager}" "${packages[@]}"
+    install_dependencies "${manager}" "${packages[@]}" || {
+      printf '已尝试命令: %s install %s\n' "${manager}" "${packages_text}" >&2
+      return 1
+    }
   fi
 
   mapfile -t missing < <(collect_missing_dependencies)
@@ -700,7 +712,7 @@ run_install() {
   run_step "preflight" 1 preflight
 
   log_phase 2 "${total}" "deps"
-  run_step "deps" 1 deps_stage
+  run_step "deps" "${INSTALL_DEPS_RETRIES}" deps_stage
 
   log_phase 3 "${total}" "env"
   run_step "env" 1 ensure_env

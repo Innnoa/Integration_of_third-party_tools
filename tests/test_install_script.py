@@ -1086,3 +1086,335 @@ else:
         self.assertNotIn("prepare-harbor.sh", lines)
         self.assertNotIn("bootstrap-keycloak.sh", lines)
         self.assertNotIn("panel.sh", lines)
+
+    def test_install_deps_uses_dnf_package_manager(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
+
+            fakebin = root / "fakebin"
+            fakebin.mkdir()
+            install_log = root / "deps.log"
+            write_executable(
+                fakebin / "sudo",
+                "#!/usr/bin/env bash\n"
+                "echo sudo:$* >> \"$INSTALL_LOG\"\n"
+                "\"$@\"\n",
+            )
+            write_executable(
+                fakebin / "dnf",
+                "#!/usr/bin/env bash\n"
+                "echo dnf:$* >> \"$INSTALL_LOG\"\n"
+                "if [ \"$1\" = \"install\" ]; then\n"
+                "  : > \"$INSTALL_FAKEBIN/fakecmd\"\n"
+                "  chmod +x \"$INSTALL_FAKEBIN/fakecmd\"\n"
+                "fi\n",
+            )
+            result = subprocess.run(
+                ["bash", "install.sh", "--skip-panel", "--skip-harbor"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "PATH": f"{fakebin}:{os.environ['PATH']}",
+                    "INSTALL_LOG": str(install_log),
+                    "INSTALL_FAKEBIN": str(fakebin),
+                    "INSTALL_REQUIRED_COMMANDS": "fakecmd",
+                },
+            )
+            log_text = install_log.read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("dnf:install -y fakecmd", log_text)
+
+    def test_install_deps_uses_yum_package_manager(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
+
+            fakebin = root / "fakebin"
+            fakebin.mkdir()
+            install_log = root / "deps.log"
+            write_executable(
+                fakebin / "sudo",
+                "#!/usr/bin/env bash\n"
+                "echo sudo:$* >> \"$INSTALL_LOG\"\n"
+                "\"$@\"\n",
+            )
+            write_executable(
+                fakebin / "yum",
+                "#!/usr/bin/env bash\n"
+                "echo yum:$* >> \"$INSTALL_LOG\"\n"
+                "if [ \"$1\" = \"install\" ]; then\n"
+                "  : > \"$INSTALL_FAKEBIN/fakecmd\"\n"
+                "  chmod +x \"$INSTALL_FAKEBIN/fakecmd\"\n"
+                "fi\n",
+            )
+            result = subprocess.run(
+                ["bash", "install.sh", "--skip-panel", "--skip-harbor"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "PATH": f"{fakebin}:{os.environ['PATH']}",
+                    "INSTALL_LOG": str(install_log),
+                    "INSTALL_FAKEBIN": str(fakebin),
+                    "INSTALL_REQUIRED_COMMANDS": "fakecmd",
+                },
+            )
+            log_text = install_log.read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("yum:install -y fakecmd", log_text)
+
+    def test_install_deps_uses_pacman_package_manager(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
+
+            fakebin = root / "fakebin"
+            fakebin.mkdir()
+            install_log = root / "deps.log"
+            write_executable(
+                fakebin / "sudo",
+                "#!/usr/bin/env bash\n"
+                "echo sudo:$* >> \"$INSTALL_LOG\"\n"
+                "\"$@\"\n",
+            )
+            write_executable(
+                fakebin / "pacman",
+                "#!/usr/bin/env bash\n"
+                "echo pacman:$* >> \"$INSTALL_LOG\"\n"
+                "if [ \"$1\" = \"-Sy\" ]; then\n"
+                "  : > \"$INSTALL_FAKEBIN/fakecmd\"\n"
+                "  chmod +x \"$INSTALL_FAKEBIN/fakecmd\"\n"
+                "fi\n",
+            )
+            result = subprocess.run(
+                ["bash", "install.sh", "--skip-panel", "--skip-harbor"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "PATH": f"{fakebin}:{os.environ['PATH']}",
+                    "INSTALL_LOG": str(install_log),
+                    "INSTALL_FAKEBIN": str(fakebin),
+                    "INSTALL_REQUIRED_COMMANDS": "fakecmd",
+                },
+            )
+            log_text = install_log.read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("pacman:-Sy --noconfirm", log_text)
+        self.assertIn("fakecmd", log_text)
+
+    def test_install_deps_uses_zypper_package_manager(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
+
+            fakebin = root / "fakebin"
+            fakebin.mkdir()
+            install_log = root / "deps.log"
+            write_executable(
+                fakebin / "sudo",
+                "#!/usr/bin/env bash\n"
+                "echo sudo:$* >> \"$INSTALL_LOG\"\n"
+                "\"$@\"\n",
+            )
+            write_executable(
+                fakebin / "zypper",
+                "#!/usr/bin/env bash\n"
+                "echo zypper:$* >> \"$INSTALL_LOG\"\n"
+                "if [ \"$1\" = \"--non-interactive\" ]; then\n"
+                "  : > \"$INSTALL_FAKEBIN/fakecmd\"\n"
+                "  chmod +x \"$INSTALL_FAKEBIN/fakecmd\"\n"
+                "fi\n",
+            )
+            result = subprocess.run(
+                ["bash", "install.sh", "--skip-panel", "--skip-harbor"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "PATH": f"{fakebin}:{os.environ['PATH']}",
+                    "INSTALL_LOG": str(install_log),
+                    "INSTALL_FAKEBIN": str(fakebin),
+                    "INSTALL_REQUIRED_COMMANDS": "fakecmd",
+                    "INSTALL_PACKAGE_MANAGER": "zypper",
+                },
+            )
+            log_text = install_log.read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("zypper:--non-interactive install", log_text)
+        self.assertIn("fakecmd", log_text)
+
+    def test_install_retries_verify_before_failing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            hosts_file = root / "hosts"
+            log_file = root / "verify.log"
+            write_executable(
+                root / "scripts" / "install_helper.py",
+                "#!/usr/bin/env python3\n"
+                "import pathlib, os, sys\n"
+                "log = pathlib.Path(os.environ.get('INSTALL_VERIFY_LOG', '/dev/null'))\n"
+                "cmd = sys.argv[1]\n"
+                "if cmd == 'detect-public-ip':\n"
+                "    print('127.0.0.1')\n"
+                "elif cmd == 'sync-hosts':\n"
+                "    pathlib.Path(sys.argv[sys.argv.index('--hosts-file') + 1]).write_text('managed-hosts\\n', encoding='utf-8')\n"
+                "elif cmd == 'configure-portainer':\n"
+                "    print('configured')\n"
+                "elif cmd == 'verify-install':\n"
+                "    count = len(log.read_text(encoding='utf-8').splitlines()) if log.exists() else 0\n"
+                "    log.write_text('verify-attempt\\n', encoding='utf-8')\n"
+                "    if count < 1:\n"
+                "        print('{\"overall\":\"error\",\"checks\":[]}')\n"
+                "        sys.exit(3)\n"
+                "    print('{\"overall\":\"ready\",\"checks\":[]}')\n"
+                "else:\n"
+                "    raise SystemExit(cmd)\n",
+            )
+            for name in ("init-network.sh", "up-main.sh", "repair-mariadb-phpmyadmin-user.sh", "bootstrap-keycloak.sh"):
+                write_executable(root / "scripts" / name, "#!/usr/bin/env bash\nexit 0\n")
+            write_executable(root / "scripts" / "panel.sh", "#!/usr/bin/env bash\nexit 0\n")
+            (root / ".env.example").write_text(
+                "PUBLIC_SCHEME=http\nPUBLIC_HOST=REPLACE_ME_PUBLIC_HOST\nBROWSER_HOST=localhost\n"
+                "KEYCLOAK_REALM=infra\nPORTAINER_CLIENT_ID=portainer\nPORTAINER_CLIENT_SECRET=s\n"
+                "PORTAINER_ADMIN_USER=admin\nPORTAINER_ADMIN_PASSWORD=p\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["bash", "install.sh", "--base-domain", "dev.example", "--skip-panel"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "INSTALL_HOSTS_FILE": str(hosts_file),
+                    "INSTALL_VERIFY_LOG": str(log_file),
+                },
+            )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("RETRY: verify", result.stdout + result.stderr)
+        self.assertIn("OK: verify", result.stdout)
+
+    def test_install_reports_degraded_when_optional_stage_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
+            write_executable(root / "scripts" / "panel.sh", "#!/usr/bin/env bash\nexit 5\n")
+            result = subprocess.run(
+                ["bash", "install.sh", "--skip-harbor"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("overall=degraded", result.stdout)
+        self.assertIn("panel=degraded", result.stdout)
+
+    def test_install_deps_reports_attempted_commands_on_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
+
+            fakebin = root / "fakebin"
+            fakebin.mkdir()
+            write_executable(
+                fakebin / "sudo",
+                "#!/usr/bin/env bash\n\"$@\"\n",
+            )
+            write_executable(
+                fakebin / "dnf",
+                "#!/usr/bin/env bash\nexit 42\n",
+            )
+            result = subprocess.run(
+                ["bash", "install.sh", "--skip-panel", "--skip-harbor"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "PATH": f"{fakebin}:{os.environ['PATH']}",
+                    "INSTALL_REQUIRED_COMMANDS": "fakecmd",
+                    "INSTALL_DEPS_RETRIES": "1",
+                },
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("已尝试命令:", result.stderr + result.stdout)
+        self.assertIn("dnf install", result.stderr + result.stdout)
+
+    def test_install_deps_retries_before_failing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "scripts").mkdir()
+            stage_install_scripts(root)
+            stage_successful_runtime_scripts(root)
+            (root / ".env.example").write_text("PUBLIC_SCHEME=http\nPUBLIC_HOST=localhost\n", encoding="utf-8")
+
+            fakebin = root / "fakebin"
+            fakebin.mkdir()
+            deps_log = root / "deps-attempts.log"
+            write_executable(
+                fakebin / "sudo",
+                "#!/usr/bin/env bash\n\"$@\"\n",
+            )
+            write_executable(
+                fakebin / "dnf",
+                "#!/usr/bin/env bash\n"
+                "count=0\n"
+                "if [ -f \"$INSTALL_DEPS_LOG\" ]; then count=$(wc -l < \"$INSTALL_DEPS_LOG\"); fi\n"
+                "echo dnf-attempt >> \"$INSTALL_DEPS_LOG\"\n"
+                "if [ \"$count\" -lt 1 ]; then exit 42; fi\n"
+                ": > \"$INSTALL_FAKEBIN/fakecmd\"\n"
+                "chmod +x \"$INSTALL_FAKEBIN/fakecmd\"\n",
+            )
+            result = subprocess.run(
+                ["bash", "install.sh", "--skip-panel", "--skip-harbor"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                env={
+                    **os.environ,
+                    "PATH": f"{fakebin}:{os.environ['PATH']}",
+                    "INSTALL_DEPS_LOG": str(deps_log),
+                    "INSTALL_FAKEBIN": str(fakebin),
+                    "INSTALL_REQUIRED_COMMANDS": "fakecmd",
+                    "INSTALL_DEPS_RETRIES": "2",
+                },
+            )
+            log_lines = deps_log.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(len(log_lines), 2)
+        self.assertIn("RETRY: deps", result.stdout + result.stderr)
